@@ -75,7 +75,7 @@ if __name__ == "__main__":
             audio_file = file_name + "_audio"
             audio_path = os.path.join(CACHE_PATH, 'audio', audio_file)
             np.save(audio_path, x, allow_pickle=False)
-            del output[0]
+            del output[1]
             output.insert(1, audio_path+".npy")
         return output
 
