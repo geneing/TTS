@@ -42,8 +42,8 @@ Check out [here](https://mycroft.ai/blog/available-voices/#the-human-voice-is-th
 | [iter-170K](https://drive.google.com/open?id=16L6JbPXj6MSlNUxEStNn28GiSzi4fu1j) |LJSpeech| [e00bc66](https://github.com/mozilla/TTS/tree/e00bc66) |[link](https://soundcloud.com/user-565970875/april-13-2018-07-06pm-e00bc66-iter170k)|More stable and longer trained model.|
 | [iter-270K](https://drive.google.com/drive/folders/1Q6BKeEkZyxSGsocK2p_mqgzLwlNvbHFJ?usp=sharing)|LJSpeech|[256ed63](https://github.com/mozilla/TTS/tree/256ed63)|[link](https://soundcloud.com/user-565970875/sets/samples-1650226)|Stop-Token prediction is added, to detect end of speech.|
 | [iter-120K](https://drive.google.com/open?id=1A5Hr6aSvfGgIiE20mBkpzyn3vvbR2APj) |LJSpeech| [bf7590](https://github.com/mozilla/TTS/tree/bf7590) | [link](https://soundcloud.com/user-565970875/sets/september-26-2018-bf7590) | Better for longer sentences |
-|[iter-108K](https://drive.google.com/open?id=1deQ2akq9cuyreda0DgZOiBdydkbgseWP)| TWEB | [2810d57](https://github.com/mozilla/TTS/tree/2810d57) | [link](https://soundcloud.com/user-565970875/tweb-example-108k-iters-2810d57) | https://github.com/mozilla/TTS/issues/22 | 
-| Best: [iter-185K](https://drive.google.com/drive/folders/1GU8WGix98WrR3ayjoiirmmbLUZzwg4n0?usp=sharing) | LJSpeech | [db7f3d3](https://github.com/mozilla/TTS/tree/db7f3d3) | [link](https://soundcloud.com/user-565970875/sets/ljspeech-model-185k-iters-commit-db7f3d3) | [link](https://github.com/mozilla/TTS/issues/108) |
+|[iter-108K](https://drive.google.com/open?id=1cAjRy6jB_3iwRSzkLhD6LutCTOQV28yV)| TWEB | [2810d57](https://github.com/mozilla/TTS/tree/2810d57) | [link](https://soundcloud.com/user-565970875/tweb-example-108k-iters-2810d57) | https://github.com/mozilla/TTS/issues/22 | 
+| Best: [iter-185K](https://drive.google.com/open?id=1GU8WGix98WrR3ayjoiirmmbLUZzwg4n0) | LJSpeech | [db7f3d3](https://github.com/mozilla/TTS/tree/db7f3d3) | [link](https://soundcloud.com/user-565970875/sets/ljspeech-model-185k-iters-commit-db7f3d3) | [link](https://github.com/mozilla/TTS/issues/108) |
 
 ## Example Model Outputs
 Below you see model state after 16K iterations with batch-size 32.
@@ -110,6 +110,13 @@ You can also enjoy Tensorboard,  if you point the Tensorboard argument```--logdi
 
 ## Testing
 Best way to test your network is to use Notebooks under ```notebooks``` folder.
+
+## Contact/Getting Help
+- [Wiki](https://github.com/mozilla/TTS/wiki)
+
+- [Discourse Forums](https://discourse.mozilla.org/c/tts) - If your question is not addressed in the Wiki, the Discourse Forums is the next place to look. They contain conversations on General Topics, Using TTS, and TTS Development.
+
+- [Issues](https://github.com/mozilla/TTS/issues) - Finally, if all else fails, you can open an issue in our repo.
 
 ## What is new with TTS
 If you train TTS with LJSpeech dataset, you start to hear reasonable results after 12.5K iterations with batch size 32. This is the fastest training with character-based methods up to our knowledge. Out implementation is also quite robust against long sentences.
