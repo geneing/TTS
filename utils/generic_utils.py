@@ -110,7 +110,7 @@ def save_checkpoint(model, optimizer, optimizer_st, model_loss, out_path,
     torch.save(state, checkpoint_path)
 
 
-def save_best_model(model, optimizer, model_loss, best_loss, out_path,
+def save_best_model(model, optimizer, optimizer_st, model_loss, best_loss, out_path,
                     current_step, epoch):
     if model_loss < best_loss:
         new_state_dict = model.state_dict()

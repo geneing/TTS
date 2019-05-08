@@ -396,9 +396,6 @@ def main(args):
         r=c.r,
         memory_size=c.memory_size)
 
-    optimizer = optim.Adam(model.parameters(), lr=c.lr, weight_decay=0)
-    optimizer_st = optim.Adam(
-        model.decoder.stopnet.parameters(), lr=c.lr, weight_decay=0)
 
     criterion = L1LossMasked()
     criterion_st = nn.BCELoss()
@@ -407,7 +404,15 @@ def main(args):
         checkpoint = torch.load(args.restore_path)
         try:
             model.load_state_dict(checkpoint['model'])
+            if use_cuda:
+                model = model.cuda()
+            
+            optimizer = optim.Adam(model.parameters(), lr=c.lr, weight_decay=0) #optimizer has to be created with correct model type (cpu vs cuda)
+            optimizer_st = optim.Adam(
+            model.decoder.stopnet.parameters(), lr=c.lr, weight_decay=0)
+            
             optimizer.load_state_dict(checkpoint['optimizer'])
+            optimizer_st.load_state_dict(checkpoint['optimizer_st'])
         except:
             print(" > Partial model initialization.")
             partial_init_flag = True
@@ -432,17 +437,22 @@ def main(args):
                 len(pretrained_dict), len(model_dict)))
         if use_cuda:
             model = model.cuda()
-            criterion.cuda()
-            criterion_st.cuda()
-        for group in optimizer.param_groups:
-            group['lr'] = c.lr
+            criterion = criterion.cuda()
+            criterion_st = criterion_st.cuda()
+            
+        # for group in optimizer.param_groups:
+        #     group['lr'] = c.lr
         print(
             " > Model restored from step %d" % checkpoint['step'], flush=True)
         start_epoch = checkpoint['epoch']
         best_loss = checkpoint['linear_loss']
         args.restore_step = checkpoint['step']
     else:
+        optimizer = optim.Adam( model.parameters(), lr=c.lr, weight_decay=0) #optimizer has to be created with correct model type (cpu vs cuda)
+        optimizer_st = optim.Adam( model.decoder.stopnet.parameters(), lr=c.lr, weight_decay=0)
+
         args.restore_step = 0
+        start_epoch = 0
         if use_cuda:
             model = model.cuda()
             criterion.cuda()
@@ -466,7 +476,7 @@ def main(args):
     if 'best_loss' not in locals():
         best_loss = float('inf')
 
-    for epoch in range(0, c.epochs):
+    for epoch in range(start_epoch, c.epochs):
         train_loss, current_step = train(model, criterion, criterion_st,
                                          optimizer, optimizer_st, scheduler,
                                          ap, epoch)
@@ -478,7 +488,7 @@ def main(args):
         target_loss = train_loss
         if c.run_eval:
             target_loss = val_loss
-        best_loss = save_best_model(model, optimizer, target_loss, best_loss,
+        best_loss = save_best_model(model, optimizer, optimizer_st, target_loss, best_loss,
                                     OUT_PATH, current_step, epoch)
 
 
