@@ -112,13 +112,13 @@ class MyDataset(Dataset):
             mel = self.load_np(mel_name)
             linear = self.load_np(linear_name)
         else:
-            text, wav_file = self.items[idx]
-            wav = np.asarray(self.load_wav(wav_file), dtype=np.float32)
+            text, wav_name = self.items[idx]
+            wav = np.asarray(self.load_wav(wav_name), dtype=np.float32)
             mel = None
             linear = None
         
         if self.use_phonemes:
-            text = self.load_phoneme_sequence(wav_file, text)
+            text = self.load_phoneme_sequence(wav_name, text)
         else: 
             text = np.asarray(
                 text_to_sequence(text, [self.cleaners]), dtype=np.int32)

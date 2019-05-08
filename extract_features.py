@@ -49,12 +49,21 @@ if __name__ == "__main__":
 
     ap = AudioProcessor(**CONFIG.audio)
 
-
+    def trim_silence(wav):
+        """ Trim silent parts with a threshold and 0.1 sec margin """
+        margin = int(ap.sample_rate * 0.1)
+        wav = wav[margin:-margin]
+        return librosa.effects.trim(
+            wav, top_db=40, frame_length=1024, hop_length=256)[0]
+    
     def extract_mel(item):
         """ Compute spectrograms, length information """
         text = item[0]
         file_path = item[1]
         x = ap.load_wav(file_path, ap.sample_rate)
+        if args.trim_silence:
+            x = trim_silence(x)
+            
         file_name = os.path.basename(file_path).replace(".wav", "")
         mel_file = file_name + "_mel"
         mel_path = os.path.join(CACHE_PATH, 'mel', mel_file)
