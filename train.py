@@ -255,7 +255,7 @@ def evaluate(model, criterion, criterion_st, ap, current_step, epoch):
     print("\n > Validation")
     test_sentences = [
         "It took me quite a long time to develop a voice, and now that I have it I'm not going to be silent.",
-        "Be a voice, not an echo.",
+        
         "I'm sorry Dave. I'm afraid I can't do that.",
         "This cake is great. It's so delicious and moist."
     ]
@@ -479,7 +479,7 @@ def main(args):
     for epoch in range(start_epoch, c.epochs):
         train_loss, current_step = train(model, criterion, criterion_st,
                                          optimizer, optimizer_st, scheduler,
-                                         ap, epoch)
+                                         ap, epoch-start_epoch)
         val_loss = evaluate(model, criterion, criterion_st, ap, current_step, epoch)
         print(
             " | > Training Loss: {:.5f}   Validation Loss: {:.5f}".format(
@@ -489,7 +489,7 @@ def main(args):
         if c.run_eval:
             target_loss = val_loss
         best_loss = save_best_model(model, optimizer, optimizer_st, target_loss, best_loss,
-                                    OUT_PATH, current_step, epoch)
+                                    OUT_PATH, current_step, epoch-start_epoch)
 
 
 if __name__ == '__main__':
