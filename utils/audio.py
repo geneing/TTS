@@ -55,7 +55,12 @@ class AudioProcessor(object):
             print(" | > {}:{}".format(key, value))
 
     def save_wav(self, wav, path):
-        wav_norm = wav * (32767 / max(0.01, np.max(np.abs(wav))))
+        # rescaling for unified measure for all clips
+        wav = wav / np.abs(wav).max() * 0.999
+        wav_norm = 0.5 * wav * (32767 / max(0.01, np.max(np.abs(wav))))
+        
+        firwin = signal.firwin(num_freq, [self.mel_fmin, self.mel_fmax], pass_zero=False, fs=self.sample_rate)
+        wav_norm = signal.convolve(wav_norm, firwin)
         io.wavfile.write(path, self.sample_rate, wav_norm.astype(np.int16))
 
     def _linear_to_mel(self, spectrogram):
@@ -230,17 +235,24 @@ class AudioProcessor(object):
     #     return np.sign(signal) * magnitude
 
     def load_wav(self, filename, encode=False):
-        x, sr = librosa.load(filename, sr=self.sample_rate)
+        wav, sr = librosa.load(filename, sr=self.sample_rate)
         if self.do_trim_silence:
-            x = self.trim_silence(x)
+            wav = self.trim_silence(wav)
         # sr, x = io.wavfile.read(filename)
         assert self.sample_rate == sr
+        
+        wav = 0.99 * wav / np.abs(wav).max()
+
+        firwin = signal.firwin(self.num_freq, [self.mel_fmin, self.mel_fmax], pass_zero=False, fs=self.sample_rate)
+        x = signal.convolve(wav, firwin)
+        x = np.clip(x, -1., 1.)
         return x
 
     def encode_16bits(self, x):
         return np.clip(x * 2**15, -2**15, 2**15 - 1).astype(np.int16)
 
     def quantize(self, x):
+        x = np.clip(x, -1., 1.)
         return (x + 1.) * (2**self.bits - 1) / 2
 
     def dequantize(self, x):
