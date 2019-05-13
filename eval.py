@@ -1,17 +1,24 @@
 import io
 import os
 import argparse
-
+import time
 import numpy as np
 import torch
+from scipy import signal, io
 
 from models.tacotron import Tacotron
 from utils.audio import AudioProcessor
 from utils.generic_utils import load_config
 from utils.text import phoneme_to_sequence, phonemes, symbols, text_to_sequence
 
+import sys
+sys.path.insert(0,'../WaveRNN_Pytorch/lib/build-src-RelDebInfo')
+sys.path.insert(0,'../WaveRNN_Pytorch/library/build-src-Desktop-RelWithDebInfo')
+import WaveRNNVocoder
+
+
 class Synthesizer(object):
-    def load_model(self, model_path, model_config, use_cuda):
+    def load_model(self, model_path, model_config, wavernn_path, use_cuda):
         
         self.model_file = model_path
         print(" > Loading model ...")
@@ -41,14 +48,18 @@ class Synthesizer(object):
         if use_cuda:
             self.model.cuda()
         self.model.eval()
-    
+        self.vocoder=WaveRNNVocoder.Vocoder()
+        self.vocoder.loadWeights(wavernn_path)
+        self.firwin = signal.firwin(1025, [65, 7600], pass_zero=False, fs=16000)
+
+
     def save_wav(self, wav, path):
         # wav *= 32767 / max(1e-8, np.max(np.abs(wav)))
         wav = np.array(wav)
         self.ap.save_wav(wav, path)
     
-    def tts(self, text):
-        wavs = []
+    def ttmel(self, text):
+        mel_ret = []
         for sen in text.split('.'):
             if len(sen) < 3:
                 continue
@@ -64,14 +75,13 @@ class Synthesizer(object):
                 chars_var = chars_var.cuda()
             mel_out, linear_out, alignments, stop_tokens = self.model.forward(
                 chars_var)
-            linear_out = linear_out[0].data.cpu().numpy()
-            wav = self.ap.inv_spectrogram(linear_out.T)
-            wavs += list(wav)
-            wavs += [0] * 10000
-        
-        return wavs
+            mel_out = mel_out[0].data.cpu().numpy().T
+            mel_ret.append(mel_out)
+        return mel_ret
 
-
+    def tts(self, mel):
+        wav = self.vocoder.melToWav(mel)
+        return wav
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -80,6 +90,12 @@ if __name__ == '__main__':
         type=str,
         help='Path to model file.',
         default=0)
+    parser.add_argument(
+        '--wavernn_path',
+        type=str,
+        help='Path to wavernn model file.',
+        default=0)
+
     parser.add_argument(
         '--config_path',
         type=str,
@@ -102,7 +118,17 @@ if __name__ == '__main__':
     synthesizer = Synthesizer()
     
     synthesizer.load_model(args.model_path,
-                       args.config_path, args.use_cuda)
-    
-    wav = synthesizer.tts(args.string)
+                       args.config_path, args.wavernn_path, args.use_cuda)
+
+    start = time.time()
+    mel_out = synthesizer.ttmel(args.string)
+    mel_time = time.time() - start
+
+    start = time.time()
+    wav = synthesizer.tts( mel_out[0] )
+    #wav = signal.convolve(wav, synthesizer.firwin)
+    #wav = np.clip(wav, -1., 1.)
+    vocoder_time = time.time() - start
+
+    print("TTS time: {}, Vocoder time: {}\n".format(mel_time, vocoder_time))
     synthesizer.ap.save_wav(wav, 'test.wav')
