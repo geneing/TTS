@@ -59,8 +59,8 @@ class AudioProcessor(object):
         wav = wav / np.abs(wav).max() * 0.999
         wav_norm = 0.5 * wav * (32767 / max(0.01, np.max(np.abs(wav))))
         
-        firwin = signal.firwin(self.num_freq, [self.mel_fmin, self.mel_fmax], pass_zero=False, fs=self.sample_rate)
-        wav_norm = signal.convolve(wav_norm, firwin)
+        #firwin = signal.firwin(self.num_freq, [self.mel_fmin, self.mel_fmax], pass_zero=False, fs=self.sample_rate)
+        #wav_norm = signal.convolve(wav_norm, firwin)
         io.wavfile.write(path, self.sample_rate, wav_norm.astype(np.int16))
 
     def _linear_to_mel(self, spectrogram):

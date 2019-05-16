@@ -4,6 +4,8 @@ import argparse
 import time
 import numpy as np
 import torch
+import matplotlib.pyplot as plt
+
 from scipy import signal, io
 
 from models.tacotron import Tacotron
@@ -38,6 +40,7 @@ class Synthesizer(object):
             self.input_adapter = lambda sen: text_to_sequence(sen, [self.config.text_cleaner])
         
         self.model = Tacotron(self.input_size, config.embedding_size, self.ap.num_freq, self.ap.num_mels, config.r)
+        #self.model.decoder.max_decoder_steps = 2000
         # load model state
         if use_cuda:
             cp = torch.load(self.model_file)
@@ -73,10 +76,12 @@ class Synthesizer(object):
             chars_var = torch.from_numpy(seq).unsqueeze(0).long()
             if self.use_cuda:
                 chars_var = chars_var.cuda()
-            mel_out, linear_out, alignments, stop_tokens = self.model.forward(
+            mel_out, _, alignments, stop_tokens = self.model.forward(
                 chars_var)
             mel_out = mel_out[0].data.cpu().numpy().T
             mel_ret.append(mel_out)
+            plt.imshow(alignments.data.numpy().squeeze().T)
+            plt.savefig('test.png')
         return mel_ret
 
     def tts(self, mel):
@@ -126,8 +131,6 @@ if __name__ == '__main__':
 
     start = time.time()
     wav = synthesizer.tts( mel_out[0] )
-    #wav = signal.convolve(wav, synthesizer.firwin)
-    #wav = np.clip(wav, -1., 1.)
     vocoder_time = time.time() - start
 
     print("TTS time: {}, Vocoder time: {}\n".format(mel_time, vocoder_time))

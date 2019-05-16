@@ -29,7 +29,7 @@ class Tacotron(nn.Module):
             nn.Linear(self.postnet.cbhg.gru_features * 2, linear_dim),
             nn.Sigmoid())
 
-    def forward(self, characters, mel_specs=None, mask=None):
+    def forward(self, characters, mel_specs=None, mask=None, linear_out=True):
         B = characters.size(0)
         inputs = self.embedding(characters)
         # batch x time x dim
@@ -40,6 +40,9 @@ class Tacotron(nn.Module):
         # Reshape
         # batch x time x dim
         mel_outputs = mel_outputs.view(B, -1, self.mel_dim)
-        linear_outputs = self.postnet(mel_outputs)
-        linear_outputs = self.last_linear(linear_outputs)
+        if linear_out:
+            linear_outputs = self.postnet(mel_outputs)
+            linear_outputs = self.last_linear(linear_outputs)
+        else:
+            linear_outputs = None
         return mel_outputs, linear_outputs, alignments, stop_tokens
