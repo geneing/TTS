@@ -29,7 +29,7 @@ class Synthesizer(object):
             self.input_size = len(symbols)
             self.input_adapter = lambda sen: text_to_sequence(sen, [self.config.text_cleaner])
 
-        self.model = Tacotron(self.input_size, config.embedding_size, self.ap.num_freq, self.ap.num_mels, config.r)
+        self.model = Tacotron(self.input_size, config.embedding_size, self.ap.num_freq, self.ap.num_mels, config.r, attn_windowing=True)
         # load model state
         if use_cuda:
             cp = torch.load(self.model_file)
@@ -61,10 +61,9 @@ class Synthesizer(object):
             chars_var = torch.from_numpy(seq).unsqueeze(0).long()
             if self.use_cuda:
                 chars_var = chars_var.cuda()
-            mel_out, linear_out, alignments, stop_tokens = self.model.forward(
+            mel_out, alignments, stop_tokens = self.model.forward(
                 chars_var)
-            linear_out = linear_out[0].data.cpu().numpy()
-            wav = self.ap.inv_spectrogram(linear_out.T)
+            wav = self.ap.inv_mel_spectrogram(mel_out.T)
             wavs += list(wav)
             wavs += [0] * 10000
 

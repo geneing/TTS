@@ -39,7 +39,7 @@ class Synthesizer(object):
             self.input_size = len(symbols)
             self.input_adapter = lambda sen: text_to_sequence(sen, [self.config.text_cleaner])
         
-        self.model = Tacotron(self.input_size, config.embedding_size, self.ap.num_freq, self.ap.num_mels, config.r)
+        self.model = Tacotron(self.input_size, config.embedding_size, self.ap.num_freq, self.ap.num_mels, config.r, attn_windowing=True)
         #self.model.decoder.max_decoder_steps = 2000
         # load model state
         if use_cuda:
@@ -76,7 +76,7 @@ class Synthesizer(object):
             chars_var = torch.from_numpy(seq).unsqueeze(0).long()
             if self.use_cuda:
                 chars_var = chars_var.cuda()
-            mel_out, _, alignments, stop_tokens = self.model.forward(
+            mel_out, alignments, stop_tokens = self.model.forward(
                 chars_var)
             mel_out = mel_out[0].data.cpu().numpy().T
             mel_ret.append(mel_out)

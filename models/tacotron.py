@@ -24,12 +24,9 @@ class Tacotron(nn.Module):
         self.embedding.weight.data.normal_(0, 0.3)
         self.encoder = Encoder(embedding_dim)
         self.decoder = Decoder(256, mel_dim, r, memory_size, attn_windowing)
-        self.postnet = PostCBHG(mel_dim)
-        self.last_linear = nn.Sequential(
-            nn.Linear(self.postnet.cbhg.gru_features * 2, linear_dim),
-            nn.Sigmoid())
 
-    def forward(self, characters, mel_specs=None, mask=None, linear_out=True):
+
+    def forward(self, characters, mel_specs=None, mask=None):
         B = characters.size(0)
         inputs = self.embedding(characters)
         # batch x time x dim
@@ -40,9 +37,5 @@ class Tacotron(nn.Module):
         # Reshape
         # batch x time x dim
         mel_outputs = mel_outputs.view(B, -1, self.mel_dim)
-        if linear_out:
-            linear_outputs = self.postnet(mel_outputs)
-            linear_outputs = self.last_linear(linear_outputs)
-        else:
-            linear_outputs = None
-        return mel_outputs, linear_outputs, alignments, stop_tokens
+
+        return mel_outputs, alignments, stop_tokens

@@ -1,7 +1,7 @@
 {
-    "model_path":"/home/erogol/projects/runs/2579/keep/November-04-2018_06+19PM-TTS-master-_tmp-debug/",
+    "model_path":"/rhome/eingerman/Neural/MachineCodes/Speech/TTS/maryann_models/wavernn-May-10-2019_09+06AM-819bcf7/",
     "model_name":"best_model.pth.tar",
-    "model_config":"config.json",
+    "model_config":"config_curr.json",
     "port": 5002,
-    "use_cuda": true
+    "use_cuda": false
 }
