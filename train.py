@@ -21,7 +21,7 @@ from utils.generic_utils import (
     NoamLR, check_update, count_parameters, create_experiment_folder,
     get_commit_hash, load_config, lr_decay, remove_experiment_folder,
     save_best_model, save_checkpoint, sequence_mask, weight_decay)
-from utils.logger import Logger
+from utils.logger import Logger, log_to_slack
 from utils.synthesis import synthesis
 from utils.text.symbols import phonemes, symbols
 from utils.visual import plot_alignment, plot_spectrogram
@@ -73,7 +73,7 @@ def setup_loader(is_val=False, verbose=False):
 
 
 def train(model, criterion, criterion_st, optimizer, optimizer_st, scheduler,
-          ap, epoch):
+          ap, epoch, slack_url):
     data_loader = setup_loader(is_val=False, verbose=(epoch==0))
     model.train()
     epoch_time = 0
@@ -132,8 +132,8 @@ def train(model, criterion, criterion_st, optimizer, optimizer_st, scheduler,
 
         # loss computation
         stop_loss = criterion_st(stop_tokens, stop_targets)
-        loss = criterion(mel_output, mel_input, mel_lengths)
-
+        mel_loss = criterion(mel_output, mel_input, mel_lengths)
+        loss = mel_loss
         # backpass and check the grad norm for spec losses
         loss.backward(retain_graph=True)
         optimizer, current_lr = weight_decay(optimizer, c.wd)
@@ -150,15 +150,12 @@ def train(model, criterion, criterion_st, optimizer, optimizer_st, scheduler,
         epoch_time += step_time
 
         if current_step % c.print_step == 0:
-            print(
-                " | > Step:{}/{}  GlobalStep:{}  TotalLoss:{:.5f}  "
-                "MelLoss:{:.5f}  StopLoss:{:.5f}  GradNorm:{:.5f}  "
-                "GradNormST:{:.5f}  AvgTextLen:{:.1f}  AvgSpecLen:{:.1f}  StepTime:{:.2f}  LR:{:.6f}"
-                .format(num_iter, batch_n_iter, current_step, loss.item(),
-                        mel_loss.item(), stop_loss.item(),
-                        grad_norm, grad_norm_st, avg_text_length,
-                        avg_spec_length, step_time, current_lr),
-                flush=True)
+            msg = " | > Step:{}/{}  GlobalStep:{}  TotalLoss:{:.5f} MelLoss:{:.5f}  StopLoss:{:.5f}  GradNorm:{:.5f} GradNormST:{:.5f}  AvgTextLen:{:.1f}  AvgSpecLen:{:.1f}  StepTime:{:.2f}  LR:{:.6f}".format(num_iter, batch_n_iter, current_step, loss.item(),
+                    mel_loss.item(), stop_loss.item(),
+                    grad_norm, grad_norm_st, avg_text_length,
+                    avg_spec_length, step_time, current_lr)
+            print(msg,flush=True)
+            log_to_slack(slack_url, msg)
 
         # aggregate losses from processes
         if num_gpus > 1:
@@ -202,7 +199,7 @@ def train(model, criterion, criterion_st, optimizer, optimizer_st, scheduler,
 
                 # Sample audio
                 tb_logger.tb_train_audios(
-                    current_step, {'TrainAudio': ap.inv_spectrogram(const_spec.T)},
+                    current_step, {'TrainAudio': ap.inv_mel_spectrogram(const_spec.T)},
                     c.audio["sample_rate"])
 
     avg_mel_loss /= (num_iter + 1)
@@ -211,15 +208,12 @@ def train(model, criterion, criterion_st, optimizer, optimizer_st, scheduler,
     avg_step_time /= (num_iter + 1)
 
     # print epoch stats
-    print(
-        " | > EPOCH END -- GlobalStep:{}  AvgTotalLoss:{:.5f}  "
-        " AvgMelLoss:{:.5f}  "
-        "AvgStopLoss:{:.5f}  EpochTime:{:.2f}  "
-        "AvgStepTime:{:.2f}".format(current_step, avg_total_loss,
-                                    avg_mel_loss,
-                                    avg_stop_loss, epoch_time, avg_step_time),
-        flush=True)
-
+    msg = " | > EPOCH END -- GlobalStep:{}  AvgTotalLoss:{:.5f} AvgMelLoss:{:.5f} AvgStopLoss:{:.5f}  EpochTime:{:.2f}  AvgStepTime:{:.2f}".format(current_step, avg_total_loss,
+                                avg_mel_loss,
+                                avg_stop_loss, epoch_time, avg_step_time)
+    print(msg, flush=True)
+    log_to_slack(slack_url, msg)
+    
     # Plot Epoch Stats
     if args.rank == 0:
         # Plot Training Epoch Stats
@@ -427,7 +421,11 @@ def main(args):
         print(
             " > Model restored from step %d" % checkpoint['step'], flush=True)
         start_epoch = checkpoint['epoch']
-        best_loss = checkpoint['mel_loss']
+        try:
+            best_loss = checkpoint['model_loss']
+        except:
+            best_loss = 100000
+            pass
         args.restore_step = checkpoint['step']
     else:
         optimizer = optim.Adam( model.parameters(), lr=c.lr, weight_decay=0) #optimizer has to be created with correct model type (cpu vs cuda)
@@ -459,9 +457,11 @@ def main(args):
         best_loss = float('inf')
 
     for epoch in range(start_epoch, c.epochs):
+        # with torch.cuda.profiler.profile():
+        #     with torch.autograd.profiler.emit_nvtx():
         train_loss, current_step = train(model, criterion, criterion_st,
                                          optimizer, optimizer_st, scheduler,
-                                         ap, epoch-start_epoch)
+                                         ap, epoch-start_epoch, args.slack_url)
         val_loss = evaluate(model, criterion, criterion_st, ap, current_step, epoch)
         print(
             " | > Training Loss: {:.5f}   Validation Loss: {:.5f}".format(
@@ -472,7 +472,6 @@ def main(args):
             target_loss = val_loss
         best_loss = save_best_model(model, optimizer, optimizer_st, target_loss, best_loss,
                                     OUT_PATH, current_step, epoch-start_epoch)
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -501,7 +500,8 @@ if __name__ == '__main__':
         type=str,
         help='path for training outputs.',
         default='')
-
+    parser.add_argument('--slack_url', default=None,
+                        help='slack webhook notification destination link')
     # DISTRUBUTED
     parser.add_argument(
         '--rank',
@@ -550,6 +550,7 @@ if __name__ == '__main__':
     ap = AudioProcessor(**c.audio)
 
     try:
+        log_to_slack(args.slack_url, "Starting")
         main(args)
     except KeyboardInterrupt:
         remove_experiment_folder(OUT_PATH)
