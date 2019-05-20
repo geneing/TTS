@@ -11,13 +11,15 @@ from scipy import signal, io
 from models.tacotron import Tacotron
 from utils.audio import AudioProcessor
 from utils.generic_utils import load_config
-from utils.text import phoneme_to_sequence, phonemes, symbols, text_to_sequence
+from utils.text import phoneme_to_sequence, phonemes, symbols, text_to_sequence, split_text
+from nltk.tokenize import sent_tokenize, word_tokenize
 
 import sys
 sys.path.insert(0,'../WaveRNN_Pytorch/lib/build-src-RelDebInfo')
 sys.path.insert(0,'../WaveRNN_Pytorch/library/build-src-Desktop-RelWithDebInfo')
 import WaveRNNVocoder
 
+maxlen = 130
 
 class Synthesizer(object):
     def load_model(self, model_path, model_config, wavernn_path, use_cuda):
@@ -39,8 +41,8 @@ class Synthesizer(object):
             self.input_size = len(symbols)
             self.input_adapter = lambda sen: text_to_sequence(sen, [self.config.text_cleaner])
         
-        self.model = Tacotron(self.input_size, config.embedding_size, self.ap.num_freq, self.ap.num_mels, config.r)
-        #self.model.decoder.max_decoder_steps = 2000
+        self.model = Tacotron(self.input_size, config.embedding_size, self.ap.num_freq, self.ap.num_mels, config.r, attn_windowing=True)
+        self.model.decoder.max_decoder_steps = 8000
         # load model state
         if use_cuda:
             cp = torch.load(self.model_file)
@@ -60,29 +62,24 @@ class Synthesizer(object):
         # wav *= 32767 / max(1e-8, np.max(np.abs(wav)))
         wav = np.array(wav)
         self.ap.save_wav(wav, path)
-    
+
+    #split text into chunks that are smaller than maxlen. Preferably, split on punctuation.
+
     def ttmel(self, text):
         mel_ret = []
-        for sen in text.split('.'):
-            if len(sen) < 3:
+        text_list = split_text(text, maxlen)
+        for t in text_list:
+            if len(t) < 3:
                 continue
-            sen = sen.strip()
-            sen += '.'
-            print(sen)
-            sen = sen.strip()
-            
-            seq = np.array(self.input_adapter(sen))
+            seq = np.array(self.input_adapter(t))
             
             chars_var = torch.from_numpy(seq).unsqueeze(0).long()
             if self.use_cuda:
                 chars_var = chars_var.cuda()
-            mel_out, _, alignments, stop_tokens = self.model.forward(
-                chars_var)
+            mel_out, _, alignments, stop_tokens = self.model.forward(chars_var)
             mel_out = mel_out[0].data.cpu().numpy().T
             mel_ret.append(mel_out)
-            plt.imshow(alignments.data.numpy().squeeze().T)
-            plt.savefig('test.png')
-        return mel_ret
+        return np.hstack(mel_ret)
 
     def tts(self, mel):
         wav = self.vocoder.melToWav(mel)
@@ -114,9 +111,18 @@ if __name__ == '__main__':
     )
 
     parser.add_argument(
+        '--input_file',
+        type=str,
+        help='Input file',
+        default = None
+    )
+
+    parser.add_argument(
         'string',
         type=str,
-        help='String to read'
+        nargs='?',
+        help='String to read',
+        default=None
     )
     
     args = parser.parse_args()
@@ -125,13 +131,30 @@ if __name__ == '__main__':
     synthesizer.load_model(args.model_path,
                        args.config_path, args.wavernn_path, args.use_cuda)
 
-    start = time.time()
-    mel_out = synthesizer.ttmel(args.string)
-    mel_time = time.time() - start
+    if args.string is not None:
+        start = time.time()
+        mel_out = synthesizer.ttmel(args.string)
+        mel_time = time.time() - start
 
-    start = time.time()
-    wav = synthesizer.tts( mel_out[0] )
-    vocoder_time = time.time() - start
+        start = time.time()
+        wav = synthesizer.tts( mel_out )
+        vocoder_time = time.time() - start
 
-    print("TTS time: {}, Vocoder time: {}\n".format(mel_time, vocoder_time))
-    synthesizer.ap.save_wav(wav, 'test.wav')
+        print("TTS time: {}, Vocoder time: {}\n".format(mel_time, vocoder_time))
+        synthesizer.ap.save_wav(wav, 'test.wav')
+    elif args.input_file is not None:
+        n = 0
+        with open(args.input_file, 'r') as f:
+            text_full = f.read()
+
+            text_split = sent_tokenize(text_full)
+            for texts in text_split[50:]:
+                try:
+                    mel_out = synthesizer.ttmel(texts)
+                    wav = synthesizer.tts( mel_out )
+                    n += 1
+                    print("%d: %s \n"%(n, texts))
+                    synthesizer.ap.save_wav(wav, 'output/%d.wav'%n)
+                except Exception as e:
+                    print(e)
+

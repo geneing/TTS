@@ -1,11 +1,7 @@
-import io
-import time
-import librosa
+
 import torch
 import numpy as np
-from .text import text_to_sequence, phoneme_to_sequence, sequence_to_phoneme
-from .visual import visualize
-from matplotlib import pylab as plt
+from .text import text_to_sequence, phoneme_to_sequence
 
 
 def synthesis(m, s, CONFIG, use_cuda, ap):

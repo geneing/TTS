@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import re
+import regex
 import phonemizer
 from phonemizer.phonemize import phonemize
 from utils.text import cleaners
@@ -138,3 +139,45 @@ def _should_keep_symbol(s):
 
 def _should_keep_phoneme(p):
     return p in _phonemes_to_id and p is not '_' and p is not '~'
+
+
+def regex_partition(content, separator):
+    separator_match = regex.search(separator, content)
+    if not separator_match:
+        return content, '', ''
+
+    matched_separator = separator_match.group(0)
+    parts = regex.split(matched_separator, content, 1)
+
+    return (parts[0]+matched_separator, parts[1])
+
+def split_text_word(txt, maxlen):
+    txt = txt.strip()
+    if len(txt) > maxlen:
+        splitpos = txt[0:maxlen].rfind(' ')
+        if splitpos==-1: #corner case, some very long word. nothing to do here.
+            return [txt]
+        return [txt[0:splitpos]] + split_text_word(txt[splitpos:], maxlen)
+    else:
+        return [txt]
+
+def split_text( text, maxlen ):
+    if len(text)<maxlen :
+        return [text]
+    text = text.replace('\n',' ').replace('\r',' ')
+
+    ret = []
+
+    s1, s2 = regex_partition(text, '[,.;:]')
+
+    if len(s1)>maxlen:
+        ret += split_text_word(s1, maxlen)
+    else:
+        ret += [s1]
+
+    if len(s2)>maxlen:
+        ret += split_text(s2, maxlen)
+    else:
+        ret += [s2]
+
+    return ret
