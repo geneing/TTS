@@ -1,5 +1,8 @@
 import traceback
 from tensorboardX import SummaryWriter
+from threading import Thread
+from urllib.request import Request, urlopen
+import json
 
 
 class Logger(object):
@@ -72,4 +75,18 @@ class Logger(object):
         self.dict_to_tb_figure("TestFigures", figures, step)
 
 
-        
+def log_to_slack(slack_url, msg=None):
+    if (msg is not None) and (slack_url is not None):
+        Thread(target=_send_slack, args=(slack_url, "TTS ", msg,)).start()
+
+def _send_slack(slack_url, header, msg):
+    try:
+        req = Request(slack_url)
+        req.add_header('Content-Type', 'application/json')
+        urlopen(req, json.dumps({
+            'username': 'tacotron',
+            'icon_emoji': ':taco:',
+            'text': '*%s*: %s' % (header, msg)
+        }).encode())
+    except Exception as e:
+        print(e)

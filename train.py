@@ -21,7 +21,7 @@ from utils.generic_utils import (
     NoamLR, check_update, count_parameters, create_experiment_folder,
     get_commit_hash, load_config, lr_decay, remove_experiment_folder,
     save_best_model, save_checkpoint, sequence_mask, weight_decay)
-from utils.logger import Logger
+from utils.logger import Logger, log_to_slack
 from utils.synthesis import synthesis
 from utils.text.symbols import phonemes, symbols
 from utils.visual import plot_alignment, plot_spectrogram
@@ -73,7 +73,7 @@ def setup_loader(is_val=False, verbose=False):
 
 
 def train(model, criterion, criterion_st, optimizer, optimizer_st, scheduler,
-          ap, epoch):
+          ap, epoch, slack_url):
     data_loader = setup_loader(is_val=False, verbose=(epoch==0))
     model.train()
     epoch_time = 0
@@ -221,15 +221,15 @@ def train(model, criterion, criterion_st, optimizer, optimizer_st, scheduler,
     avg_step_time /= (num_iter + 1)
 
     # print epoch stats
-    print(
-        " | > EPOCH END -- GlobalStep:{}  AvgTotalLoss:{:.5f}  "
-        "AvgLinearLoss:{:.5f}  AvgMelLoss:{:.5f}  "
-        "AvgStopLoss:{:.5f}  EpochTime:{:.2f}  "
+    msg=" | > EPOCH END -- GlobalStep:{}  AvgTotalLoss:{:.5f}  " \
+        "AvgLinearLoss:{:.5f}  AvgMelLoss:{:.5f}  " \
+        "AvgStopLoss:{:.5f}  EpochTime:{:.2f}  " \
         "AvgStepTime:{:.2f}".format(current_step, avg_total_loss,
-                                    avg_linear_loss, avg_mel_loss,
-                                    avg_stop_loss, epoch_time, avg_step_time),
-        flush=True)
-
+                                avg_linear_loss, avg_mel_loss,
+                                avg_stop_loss, epoch_time, avg_step_time)
+    print( msg, flush=True)
+    log_to_slack(slack_url, msg)
+    
     # Plot Epoch Stats
     if args.rank == 0:
         # Plot Training Epoch Stats
@@ -480,7 +480,7 @@ def main(args):
     for epoch in range(start_epoch, c.epochs):
         train_loss, current_step = train(model, criterion, criterion_st,
                                          optimizer, optimizer_st, scheduler,
-                                         ap, epoch-start_epoch)
+                                         ap, epoch-start_epoch, args.slack_url)
         val_loss = evaluate(model, criterion, criterion_st, ap, current_step, epoch)
         print(
             " | > Training Loss: {:.5f}   Validation Loss: {:.5f}".format(
@@ -520,7 +520,9 @@ if __name__ == '__main__':
         type=str,
         help='path for training outputs.',
         default='')
-
+    
+    parser.add_argument('--slack_url', default=None,
+                        help='slack webhook notification destination link')
     # DISTRUBUTED
     parser.add_argument(
         '--rank',
@@ -569,14 +571,15 @@ if __name__ == '__main__':
     ap = AudioProcessor(**c.audio)
 
     try:
+        log_to_slack(args.slack_url, "Starting")
         main(args)
     except KeyboardInterrupt:
-        remove_experiment_folder(OUT_PATH)
+        #remove_experiment_folder(OUT_PATH)
         try:
             sys.exit(0)
         except SystemExit:
             os._exit(0)
     except Exception:
-        remove_experiment_folder(OUT_PATH)
+        #remove_experiment_folder(OUT_PATH)
         traceback.print_exc()
         sys.exit(1)
