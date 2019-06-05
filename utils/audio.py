@@ -1,5 +1,6 @@
 import os
 import librosa
+#import soundfile as sf
 import pickle
 import copy
 import numpy as np
@@ -177,6 +178,14 @@ class AudioProcessor(object):
         else:
             return self._griffin_lim(S**self.power)
 
+    def out_linear_to_mel(self, linear_spec):
+        S = self._denormalize(linear_spec)
+        S = self._db_to_amp(S + self.ref_level_db)
+        S = self._linear_to_mel(np.abs(S))
+        S = self._amp_to_db(S) - self.ref_level_db
+        mel = self._normalize(S)
+        return mel
+
     def _griffin_lim(self, S):
         angles = np.exp(2j * np.pi * np.random.rand(*S.shape))
         S_complex = np.abs(S).astype(np.complex)
@@ -235,24 +244,19 @@ class AudioProcessor(object):
     #     return np.sign(signal) * magnitude
 
     def load_wav(self, filename, encode=False):
-        wav, sr = librosa.load(filename, sr=self.sample_rate)
+        sr, x = io.wavfile.read(filename)
+        #x, sr = sf.read(filename)
+        x=x.astype('float')
         if self.do_trim_silence:
-            wav = self.trim_silence(wav)
+            x = self.trim_silence(x)
         # sr, x = io.wavfile.read(filename)
         assert self.sample_rate == sr
-        
-        wav = 0.99 * wav / np.abs(wav).max()
-
-        firwin = signal.firwin(self.num_freq, [self.mel_fmin, self.mel_fmax], pass_zero=False, fs=self.sample_rate)
-        x = signal.convolve(wav, firwin)
-        x = np.clip(x, -1., 1.)
         return x
 
     def encode_16bits(self, x):
         return np.clip(x * 2**15, -2**15, 2**15 - 1).astype(np.int16)
 
     def quantize(self, x):
-        x = np.clip(x, -1., 1.)
         return (x + 1.) * (2**self.bits - 1) / 2
 
     def dequantize(self, x):
