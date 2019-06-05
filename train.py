@@ -434,6 +434,7 @@ def main(args):
             del model_dict
         for group in optimizer.param_groups:
             group['lr'] = c.lr
+            group['initial_lr'] = c.lr
         print(
             " > Model restored from step %d" % checkpoint['step'], flush=True)
         start_epoch = checkpoint['epoch']

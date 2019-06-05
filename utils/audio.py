@@ -246,7 +246,7 @@ class AudioProcessor(object):
     def load_wav(self, filename, encode=False):
         sr, x = io.wavfile.read(filename)
         #x, sr = sf.read(filename)
-        x=x.astype('float')
+        x=x.astype('float') / 2**15
         if self.do_trim_silence:
             x = self.trim_silence(x)
         # sr, x = io.wavfile.read(filename)
