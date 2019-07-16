@@ -98,6 +98,7 @@ def mailabs(root_path, meta_files):
                     text = cols[1].strip()
                     items.append([text, wav_file, speaker_name])
                 else:
+                    continue
                     raise RuntimeError("> File %s is not exist!"%(wav_file))
     return items
 

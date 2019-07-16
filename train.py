@@ -69,7 +69,7 @@ def setup_loader(is_val=False, verbose=False):
             sampler=sampler,
             num_workers=c.num_val_loader_workers
             if is_val else c.num_loader_workers,
-            pin_memory=False)
+            pin_memory=True)
     return loader
 
 
@@ -273,10 +273,10 @@ def evaluate(model, criterion, criterion_st, ap, current_step, epoch):
     print("\n > Validation")
     if c.test_sentences_file is None:
         test_sentences = [
-            "It took me quite a long time to develop a voice, and now that I have it I'm not going to be silent.",
+            "It took me quite a long time to develop a voice, and now that I have it I'm not going to be silent .",
             "Be a voice, not an echo.",
-            "I'm sorry Dave. I'm afraid I can't do that.",
-            "This cake is great. It's so delicious and moist."
+            "It was neither an assault by the Picards nor the Burgundians, nor a hunt led along in procession, nor a revolt of scholars in the town of Laas, nor an entry of \"our much dread lord, monsieur the king,\" nor even a pretty hanging of male and female thieves by the courts of Paris .",
+            "It was barely two days since the last cavalcade of that nature , that of the Flemish ambassadors charged with concluding the marriage between the dauphin and Marguerite of Flanders ."
         ]
     else:
         with open(c.test_sentences_file, "r") as f:
@@ -613,12 +613,12 @@ if __name__ == '__main__':
     try:
         main(args)
     except KeyboardInterrupt:
-        remove_experiment_folder(OUT_PATH)
+        #remove_experiment_folder(OUT_PATH)
         try:
             sys.exit(0)
         except SystemExit:
             os._exit(0)
     except Exception:
-        remove_experiment_folder(OUT_PATH)
+        #remove_experiment_folder(OUT_PATH)
         traceback.print_exc()
         sys.exit(1)

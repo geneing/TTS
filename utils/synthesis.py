@@ -108,7 +108,7 @@ def synthesis(model,
     # preprocess the given text
     inputs = text_to_seqvec(text, CONFIG, use_cuda)
     speaker_id = id_to_torch(speaker_id)
-    if use_cuda:
+    if use_cuda and speaker_id:
         speaker_id = speaker_id.cuda()
     # synthesize voice
     decoder_output, postnet_output, alignments, stop_tokens = run_model(
