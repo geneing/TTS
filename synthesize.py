@@ -8,9 +8,7 @@ from utils.synthesis import synthesis
 from utils.generic_utils import load_config, setup_model
 from utils.text.symbols import symbols, phonemes
 from utils.audio import AudioProcessor
-
-from WaveRNN.models.wavernn import Model as VocoderModel
-
+import sys
 
 def tts(model,
         vocoder_model,
@@ -90,7 +88,7 @@ if __name__ == "__main__":
 
     # load the model
     num_chars = len(phonemes) if C.use_phonemes else len(symbols)
-    model = setup_model(num_chars, C)
+    model = setup_model(num_chars, -1, C)
     cp = torch.load(args.model_path)
     model.load_state_dict(cp['model'])
     model.eval()
@@ -100,12 +98,15 @@ if __name__ == "__main__":
     # load vocoder model
     if args.vocoder_path != "":
         VC = load_config(args.vocoder_config_path)
+        
+        sys.path.append(os.getcwd()+'/../')
+        from WaveRNN.models.wavernn import Model as VocoderModel
+        
         bits = 10
         vocoder_model = VocoderModel(
             rnn_dims=512,
             fc_dims=512,
             mode=VC.mode,
-            mulaw=VC.mulaw,
             pad=VC.pad,
             upsample_factors=VC.upsample_factors,
             feat_dims=VC.audio["num_mels"],

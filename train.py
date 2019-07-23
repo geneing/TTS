@@ -499,6 +499,7 @@ def main(args):
         model = apply_gradient_allreduce(model)
 
     if c.lr_decay:
+        optimizer.param_groups[0]['initial_lr']=c.lr
         scheduler = NoamLR(
             optimizer,
             warmup_steps=c.warmup_steps,
