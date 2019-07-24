@@ -1,8 +1,6 @@
 import os
 import re
-import sys
 import glob
-import time
 import shutil
 import datetime
 import json
@@ -10,9 +8,7 @@ import torch
 import subprocess
 import importlib
 import numpy as np
-from collections import OrderedDict
-from torch.autograd import Variable
-from utils.text import text_to_sequence
+from collections import OrderedDict, Counter
 
 
 class AttrDict(dict):
@@ -78,7 +74,7 @@ def remove_experiment_folder(experiment_path):
     """Check folder if there is a checkpoint, otherwise remove the folder"""
 
     checkpoint_files = glob.glob(experiment_path + "/*.pth.tar")
-    if len(checkpoint_files) < 1:
+    if not checkpoint_files:
         if os.path.exists(experiment_path):
             shutil.rmtree(experiment_path)
             print(" ! Run is removed from {}".format(experiment_path))
@@ -87,7 +83,6 @@ def remove_experiment_folder(experiment_path):
 
 
 def copy_config_file(config_file, out_path, new_fields):
-    config_name = os.path.basename(config_file)
     config_lines = open(config_file, "r").readlines()
     # add extra information fields
     for key, value in new_fields.items():
@@ -122,7 +117,7 @@ def save_checkpoint(model, optimizer, optimizer_st, model_loss, out_path,
     new_state_dict = model.state_dict()
     state = {
         'model': new_state_dict,
-        'optimizer': optimizer.state_dict(),
+        'optimizer': optimizer.state_dict() if optimizer is not None else None,
         'step': current_step,
         'epoch': epoch,
         'linear_loss': model_loss,
@@ -287,3 +282,26 @@ def setup_model(num_chars, num_speakers, c):
             location_attn=c.location_attn,
             separate_stopnet=c.separate_stopnet)
     return model
+
+
+def split_dataset(items):
+    is_multi_speaker = False
+    speakers = [item[-1] for item in items]
+    is_multi_speaker = len(set(speakers)) > 1
+    eval_split_size = 500 if 500 < len(items) * 0.01 else int(len(items) * 0.01)
+    np.random.seed(0)
+    np.random.shuffle(items)
+    if is_multi_speaker:
+        items_eval = []
+        # most stupid code ever -- Fix it !
+        while len(items_eval) < eval_split_size:
+            speakers = [item[-1] for item in items]
+            speaker_counter = Counter(speakers) 
+            item_idx = np.random.randint(0, len(items))
+            if speaker_counter[items[item_idx][-1]] > 1:
+                items_eval.append(items[item_idx])
+                del items[item_idx]
+        return items_eval, items
+    else:
+        return items[:eval_split_size], items[eval_split_size:]
+

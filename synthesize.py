@@ -75,6 +75,12 @@ if __name__ == "__main__":
         type=bool,
         help="If True, vocoder model uses faster batch processing.",
         default=True)
+    parser.add_argument(
+        '--speakers_json',
+        type=str,
+        help="JSON file for multi-speaker model.",
+        default=""
+    )
     args = parser.parse_args()
 
     if args.vocoder_path != "":
@@ -86,9 +92,16 @@ if __name__ == "__main__":
     # load the audio processor
     ap = AudioProcessor(**C.audio)
 
+    # load speakers
+    if args.speakers_json != '':
+        speakers = json.load(open(args.speakers_json, 'r'))
+        num_speakers = len(speakers)
+    else:
+        num_speakers = 0
+
     # load the model
     num_chars = len(phonemes) if C.use_phonemes else len(symbols)
-    model = setup_model(num_chars, -1, C)
+    model = setup_model(num_chars, num_speakers, C)
     cp = torch.load(args.model_path)
     model.load_state_dict(cp['model'])
     model.eval()

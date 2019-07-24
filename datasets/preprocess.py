@@ -11,7 +11,7 @@ def get_preprocessor_by_name(name):
 
 
 def tweb(root_path, meta_file):
-    """Normalize TWEB dataset. 
+    """Normalize TWEB dataset.
     https://www.kaggle.com/bryanpark/the-world-english-bible-speech-dataset
     """
     txt_file = os.path.join(root_path, meta_file)
@@ -70,9 +70,9 @@ def mozilla(root_path, meta_file):
     return items
 
 
-def mailabs(root_path, meta_files):
+def mailabs(root_path, meta_files=None):
     """Normalizes M-AI-Labs meta data files to TTS format"""
-    speaker_regex = re.compile("by_book/(male|female|mix)/(?P<speaker_name>[^/]+)/")
+    speaker_regex = re.compile("by_book/(male|female)/(?P<speaker_name>[^/]+)/")
     if meta_files is None:
         csv_files = glob(root_path+"/**/metadata.csv", recursive=True)
         folders = [os.path.dirname(f) for f in csv_files]
@@ -83,7 +83,10 @@ def mailabs(root_path, meta_files):
     items = []
     for idx, csv_file in enumerate(csv_files):
         # determine speaker based on folder structure...
-        speaker_name = speaker_regex.search(csv_file).group("speaker_name")
+        speaker_name_match = speaker_regex.search(csv_file)
+        if speaker_name_match is None:
+            continue
+        speaker_name = speaker_name_match.group("speaker_name")
         print(" | > {}".format(csv_file))
         folder = folders[idx]
         txt_file = os.path.join(root_path, csv_file)
@@ -124,9 +127,9 @@ def nancy(root_path, meta_file):
     speaker_name = "nancy"
     with open(txt_file, 'r') as ttf:
         for line in ttf:
-            id = line.split()[1]
+            utt_id = line.split()[1]
             text = line[line.find('"') + 1:line.rfind('"') - 1]
-            wav_file = os.path.join(root_path, "wavn", id + ".wav")
+            wav_file = os.path.join(root_path, "wavn", utt_id + ".wav")
             items.append([text, wav_file, speaker_name])
     return items
 

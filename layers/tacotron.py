@@ -67,6 +67,7 @@ class BatchNormConv1d(nn.Module):
 
 
 class Highway(nn.Module):
+    # TODO: Try GLU layer
     def __init__(self, in_size, out_size):
         super(Highway, self).__init__()
         self.H = nn.Linear(in_size, out_size)
@@ -176,7 +177,7 @@ class CBHG(nn.Module):
         # (B, in_features, T_in)
         if x.size(-1) == self.in_features:
             x = x.transpose(1, 2)
-        T = x.size(-1)
+        # T = x.size(-1)
         # (B, hid_features*K, T_in)
         # Concat conv1d bank outputs
         outs = []
@@ -260,14 +261,17 @@ class PostCBHG(nn.Module):
 
 
 class Decoder(nn.Module):
-    r"""Decoder module.
+    """Decoder module.
 
     Args:
         in_features (int): input vector (encoder output) sample size.
         memory_dim (int): memory vector (prev. time-step output) sample size.
         r (int): number of outputs per time step.
         memory_size (int): size of the past window. if <= 0 memory_size = r
+        TODO: arguments
     """
+    # Pylint gets confused by PyTorch conventions here
+    #pylint: disable=attribute-defined-outside-init
 
     def __init__(self, in_features, memory_dim, r, memory_size, attn_windowing,
                  attn_norm, prenet_type, prenet_dropout, forward_attn,
@@ -288,16 +292,16 @@ class Decoder(nn.Module):
         # processed_inputs, processed_memory -> |Attention| -> Attention, attention, RNN_State
         self.attention_rnn = nn.GRUCell(in_features + 128, 256)
         self.attention_layer = Attention(attention_rnn_dim=256,
-                                       embedding_dim=in_features,
-                                       attention_dim=128,
-                                       location_attention=location_attn,
-                                       attention_location_n_filters=32,
-                                       attention_location_kernel_size=31,
-                                       windowing=attn_windowing,
-                                       norm=attn_norm,
-                                       forward_attn=forward_attn,
-                                       trans_agent=trans_agent,
-                                       forward_attn_mask=forward_attn_mask)
+                                         embedding_dim=in_features,
+                                         attention_dim=128,
+                                         location_attention=location_attn,
+                                         attention_location_n_filters=32,
+                                         attention_location_kernel_size=31,
+                                         windowing=attn_windowing,
+                                         norm=attn_norm,
+                                         forward_attn=forward_attn,
+                                         trans_agent=trans_agent,
+                                         forward_attn_mask=forward_attn_mask)
         # (processed_memory | attention context) -> |Linear| -> decoder_RNN_input
         self.project_to_decoder_in = nn.Linear(256 + in_features, 256)
         # decoder_RNN_input -> |RNN| -> RNN_state
@@ -394,7 +398,7 @@ class Decoder(nn.Module):
         return output, stop_token, self.attention_layer.attention_weights
 
     def _update_memory_queue(self, new_memory):
-        if self.memory_size > 0:
+        if self.memory_size > 0 and new_memory.shape[-1] < self.memory_size:
             self.memory_input = torch.cat([
                 self.memory_input[:, self.r * self.memory_dim:].clone(),
                 new_memory
