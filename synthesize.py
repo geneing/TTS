@@ -21,12 +21,13 @@ def tts(model,
         figures=False):
     t_1 = time.time()
     use_vocoder_model = vocoder_model is not None
+    
+    model.decoder.max_decoder_steps = 1500
+    
     waveform, alignment, decoder_outputs, postnet_output, stop_tokens = synthesis(
         model, text=text, CONFIG=C, use_cuda=use_cuda, ap=ap, speaker_id=False, style_wav=None, enable_eos_bos_chars=C.enable_eos_bos_chars)
-    if C.model in ["Tacotron", "TacotronGST"] and use_vocoder_model:
-        postnet_output = ap.out_linear_to_mel(postnet_output.T).T
     if use_vocoder_model:
-        vocoder_input = torch.FloatTensor(postnet_output.T).unsqueeze(0)
+        vocoder_input = (torch.FloatTensor(decoder_outputs.T).unsqueeze(0) +4.) / 8.
         waveform = vocoder_model.generate(
             vocoder_input.cuda() if use_cuda else vocoder_input,
             batched=batched_vocoder,
@@ -108,6 +109,8 @@ if __name__ == "__main__":
     model = setup_model(num_chars, num_speakers, C)
     cp = torch.load(args.model_path)
     model.load_state_dict(cp['model'])
+    model.r = cp['r']
+    model.decoder.r = cp['r']
     model.eval()
     if args.use_cuda:
         model.cuda()
