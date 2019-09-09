@@ -48,7 +48,7 @@ class TacotronGST(nn.Module):
         encoder_outputs = self.encoder(inputs)
         encoder_outputs = self._add_speaker_embedding(encoder_outputs,
                                                       speaker_ids)
-        gst_outputs = self.gst(mel_specs)
+        gst_outputs, _ = self.gst(mel_specs)
         gst_outputs = gst_outputs.expand(-1, encoder_outputs.size(1), -1)
         encoder_outputs = encoder_outputs + gst_outputs
         mel_outputs, alignments, stop_tokens = self.decoder(
