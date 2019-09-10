@@ -125,7 +125,10 @@ def save_best_model(model, optimizer, model_loss, best_loss, out_path,
     return best_loss
 
 def setup_gstnet_model(model_tacogst, c):
-    model = GSTNet( model_tacogst.gst.encoder.recurrence.input_size, model_tacogst.gst.encoder.recurrence.hidden_size )
+    model = GSTNet(model_tacogst.gst.encoder.recurrence.input_size,
+                   model_tacogst.gst.encoder.recurrence.hidden_size,
+                   model_tacogst.gst.style_token_layer.attention.W_value.out_features)
+
     return model
 
 def train(model, model_tacogst, criterion, optimizer, scheduler,
@@ -184,15 +187,14 @@ def train(model, model_tacogst, criterion, optimizer, scheduler,
             if speaker_ids is not None:
                 speaker_ids = speaker_ids.cuda(non_blocking=True)
 
-        gst_outputs, gst_enc_ground_truth = model_tacogst.gst(mel_input)
+        gst_style_ground_truth, gst_enc_ground_truth = model_tacogst.gst(mel_input)
         inputs = model_tacogst.embedding(text_input)
         encoder_output = model_tacogst.encoder(inputs)
 
         # forward pass model
-        gst_enc = model(
-            text_input, text_lengths, mel_input, speaker_ids=speaker_ids)
+        gst_style = model(encoder_output, speaker_ids=speaker_ids)
 
-        loss = criterion(gst_enc, gst_enc_ground_truth, mel_lengths)
+        loss = criterion(gst_style, gst_style_ground_truth.squeeze().detach())
         loss.backward()
 
         optimizer, current_lr = weight_decay(optimizer, c.wd)
