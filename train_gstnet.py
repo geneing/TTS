@@ -32,11 +32,10 @@ from datasets.preprocess import get_preprocessor_by_name
 
 from models.gstnet import GSTNet
 
-
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = False
 torch.manual_seed(54321)
-use_cuda = False #torch.cuda.is_available()
+use_cuda = torch.cuda.is_available()
 num_gpus = torch.cuda.device_count()
 print(" > Using CUDA: ", use_cuda)
 print(" > Number of GPUs: ", num_gpus)
@@ -326,6 +325,7 @@ def main(args): #pylint: disable=redefined-outer-name
 
     if use_cuda:
         model = model.cuda()
+        model_tacogst = model_tacogst.cuda()
         criterion.cuda()
 
     # DISTRUBUTED
