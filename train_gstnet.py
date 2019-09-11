@@ -96,8 +96,7 @@ def save_checkpoint(model, optimizer, model_loss, out_path,
         'step': current_step,
         'epoch': epoch,
         'linear_loss': model_loss,
-        'date': datetime.date.today().strftime("%B %d, %Y"),
-        'r': model.decoder.r
+        'date': datetime.date.today().strftime("%B %d, %Y")
     }
     torch.save(state, checkpoint_path)
 
