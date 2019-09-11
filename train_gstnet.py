@@ -112,8 +112,7 @@ def save_best_model(model, optimizer, model_loss, best_loss, out_path,
             'step': current_step,
             'epoch': epoch,
             'linear_loss': model_loss,
-            'date': datetime.date.today().strftime("%B %d, %Y"),
-            'r': model.decoder.r
+            'date': datetime.date.today().strftime("%B %d, %Y")
         }
         best_loss = model_loss
         bestmodel_path = 'best_model.pth.tar'
@@ -283,6 +282,80 @@ def train(model, model_tacogst, criterion, optimizer, scheduler,
             tb_logger.tb_model_weights(model, global_step)
     return avg_loss, global_step
 
+def evaluate(model, model_tacogst, criterion, ap, global_step, epoch):
+    data_loader = setup_loader(ap, is_val=True)
+    if c.use_speaker_embedding:
+        speaker_mapping = load_speaker_mapping(OUT_PATH)
+    model.eval()
+    epoch_time = 0
+    avg_loss = 0
+    print("\n > Validation")
+    with torch.no_grad():
+        if data_loader is not None:
+            for num_iter, data in enumerate(data_loader):
+                start_time = time.time()
+                
+                # setup input data
+                text_input = data[0]
+                text_lengths = data[1]
+                speaker_names = data[2]
+                linear_input = data[3]
+                mel_input = data[4]
+                mel_lengths = data[5]
+                stop_targets = data[6]
+                
+                if c.use_speaker_embedding:
+                    speaker_ids = [speaker_mapping[speaker_name]
+                                   for speaker_name in speaker_names]
+                    speaker_ids = torch.LongTensor(speaker_ids)
+                else:
+                    speaker_ids = None
+                
+                # dispatch data to GPU
+                if use_cuda:
+                    text_input = text_input.cuda()
+                    mel_input = mel_input.cuda()
+                    mel_lengths = mel_lengths.cuda()
+                    linear_input = linear_input.cuda()
+                    stop_targets = stop_targets.cuda()
+                    if speaker_ids is not None:
+                        speaker_ids = speaker_ids.cuda()
+
+                gst_style_ground_truth, gst_enc_ground_truth = model_tacogst.gst(mel_input)
+                inputs = model_tacogst.embedding(text_input)
+                encoder_output = model_tacogst.encoder(inputs)
+        
+                # forward pass model
+                gst_style = model(encoder_output, speaker_ids=speaker_ids)
+
+
+                # loss computation
+                loss = criterion(gst_style, gst_style_ground_truth.squeeze().detach())
+                
+                step_time = time.time() - start_time
+                epoch_time += step_time
+                
+                if num_iter % c.print_step == 0:
+                    print(
+                        "   | > TotalLoss: {:.5f} ".format(loss.item()),
+                        flush=True)
+                        
+                # aggregate losses from processes
+                if num_gpus > 1:
+                    loss = reduce_tensor(loss.data, num_gpus)
+
+                if args.rank == 0:
+                    avg_loss += loss
+            
+            if args.rank == 0:
+                # compute average loss
+                avg_loss /= (num_iter + 1)
+                
+                # Plot Validation Stats
+                epoch_stats = {"loss": loss}
+                tb_logger.tb_eval_stats(global_step, epoch_stats)
+    return avg_loss
+
 
 #FIXME: move args definition/parsing inside of main?
 def main(args): #pylint: disable=redefined-outer-name
@@ -317,7 +390,8 @@ def main(args): #pylint: disable=redefined-outer-name
     model_tacogst = setup_model(num_chars, num_speakers, c)
     checkpoint = torch.load(args.gst_model_path)
     model_tacogst.load_state_dict(checkpoint['model'])
-
+    #model_tacogst.eval()
+    
     model = setup_gstnet_model(model_tacogst, c)
 
     optimizer = optim.Adam(model.parameters(), lr=c.lr, weight_decay=0)
@@ -352,11 +426,11 @@ def main(args): #pylint: disable=redefined-outer-name
                                         optimizer, scheduler,
                                         ap, global_step, epoch)
         #TODO: add this
-        # val_loss = evaluate(model, criterion, ap, global_step, epoch)
-        # print(
-        #     " | > Training Loss: {:.5f}   Validation Loss: {:.5f}".format(
-        #         train_loss, val_loss),
-        #     flush=True)
+        val_loss = evaluate(model, model_tacogst, criterion, ap, global_step, epoch)
+        print(
+            " | > Training Loss: {:.5f}   Validation Loss: {:.5f}".format(
+                train_loss, val_loss),
+            flush=True)
         target_loss = train_loss
         if c.run_eval:
             target_loss = val_loss
