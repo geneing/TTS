@@ -624,6 +624,12 @@ if __name__ == '__main__':
         default='',
         help='folder name for training outputs.'
     )
+    parser.add_argument(
+        '--text_gst_prediction',
+        type=bool,
+        default=True,
+        help='Predict style from the text itself for more dynamic speaking style.'
+    )
 
     # DISTRUBUTED
     parser.add_argument(
@@ -640,6 +646,8 @@ if __name__ == '__main__':
 
     # setup output paths and read configs
     c = load_config(args.config_path)
+    c.text_gst = args.text_gst_prediction
+
     _ = os.path.dirname(os.path.realpath(__file__))
     if args.data_path != '':
         c.data_path = args.data_path
