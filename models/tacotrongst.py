@@ -22,7 +22,7 @@ class TacotronGST(nn.Module):
                  forward_attn_mask=False,
                  location_attn=True,
                  separate_stopnet=True,
-                 textgst=True):
+                 text_gst=True):
         super(TacotronGST, self).__init__()
         self.r = r
         self.mel_dim = mel_dim
@@ -41,7 +41,7 @@ class TacotronGST(nn.Module):
         self.postnet = PostCBHG(mel_dim)
         self.last_linear = nn.Linear(self.postnet.cbhg.gru_features * 2, linear_dim)
 
-        if textgst:
+        if text_gst:
             self.textgst = GSTNet(self.gst.encoder.recurrence.input_size,
                                   self.gst.encoder.recurrence.hidden_size,
                                   self.gst.style_token_layer.attention.W_value.out_features)

@@ -691,6 +691,6 @@ if __name__ == '__main__':
         except SystemExit:
             os._exit(0) #pylint: disable=protected-access
     except Exception: #pylint: disable=broad-except
-        remove_experiment_folder(OUT_PATH)
+        #remove_experiment_folder(OUT_PATH)
         traceback.print_exc()
         sys.exit(1)
