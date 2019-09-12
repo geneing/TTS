@@ -154,7 +154,7 @@ def train(model, criterion, criterion_st, optimizer, optimizer_st, scheduler,
 
         # forward pass model
         decoder_output, postnet_output, alignments, stop_tokens, text_gst = model(
-            text_input, text_lengths, mel_input, speaker_ids=speaker_ids, text_gst=c.text_gst)
+            text_input, text_lengths, mel_input, speaker_ids=speaker_ids)
 
         # loss computation
         stop_loss = criterion_st(stop_tokens, stop_targets) if c.stopnet else torch.zeros(1)
@@ -361,7 +361,7 @@ def evaluate(model, criterion, criterion_st, criterion_gst, ap, global_step, epo
                 # forward pass
                 decoder_output, postnet_output, alignments, stop_tokens, text_gst =\
                     model.forward(text_input, text_lengths, mel_input,
-                                  speaker_ids=speaker_ids, text_gst=c.text_gst)
+                                  speaker_ids=speaker_ids)
 
                 # loss computation
                 stop_loss = criterion_st(stop_tokens, stop_targets) if c.stopnet else torch.zeros(1)
@@ -393,7 +393,7 @@ def evaluate(model, criterion, criterion_st, criterion_gst, ap, global_step, epo
                         "StopLoss: {:.5f}  GSTLoss: {:.5f} ".format(loss.item(),
                                                     postnet_loss.item(),
                                                     decoder_loss.item(),
-                                                    stop_loss.item()), gst_loss.item(),
+                                                    stop_loss.item(), gst_loss.item()),
                         flush=True)
 
                 # aggregate losses from processes
@@ -469,6 +469,26 @@ def evaluate(model, criterion, criterion_st, criterion_gst, ap, global_step, epo
                 traceback.print_exc()
         tb_logger.tb_test_audios(global_step, test_audios, c.audio['sample_rate'])
         tb_logger.tb_test_figures(global_step, test_figures)
+        
+        for idx, test_sentence in enumerate(test_sentences):
+            try:
+                wav, alignment, decoder_output, postnet_output, stop_tokens = synthesis(
+                    model, test_sentence, c, use_cuda, ap,
+                    speaker_id=speaker_id,
+                    style_wav=style_wav, text_gst=True)
+                file_path = os.path.join(AUDIO_PATH, str(global_step))
+                os.makedirs(file_path, exist_ok=True)
+                file_path = os.path.join(file_path,
+                                         "TestSentence_GST_{}.wav".format(idx))
+                ap.save_wav(wav, file_path)
+                test_audios['{}-audio-GST'.format(idx)] = wav
+                test_figures['{}-prediction-GST'.format(idx)] = plot_spectrogram(postnet_output, ap)
+                test_figures['{}-alignment-GST'.format(idx)] = plot_alignment(alignment)
+            except:
+                print(" !! Error creating Test Sentence -", idx)
+                traceback.print_exc()
+        tb_logger.tb_test_audios(global_step, test_audios, c.audio['sample_rate'])
+        tb_logger.tb_test_figures(global_step, test_figures)
     return avg_postnet_loss
 
 
@@ -508,7 +528,7 @@ def main(args): #pylint: disable=redefined-outer-name
 
     #optimizer = optim.Adam(model.parameters(), lr=c.lr, weight_decay=0)
     optimizer = Ranger(model.parameters())
-    optimizer_gst = Ranger(model.textgst()) if c.text_gst else None
+    optimizer_gst = Ranger(model.textgst.parameters()) if c.text_gst else None
 
     if c.stopnet and c.separate_stopnet:
         optimizer_st = Ranger(
@@ -583,7 +603,7 @@ def main(args): #pylint: disable=redefined-outer-name
         train_loss, global_step = train(model, criterion, criterion_st,
                                         optimizer, optimizer_st, scheduler,
                                         ap, global_step, epoch, criterion_gst=criterion_gst, optimizer_gst=optimizer_gst)
-        val_loss = evaluate(model, criterion, criterion_st, ap, global_step, epoch)
+        val_loss = evaluate(model, criterion, criterion_st, criterion_gst, ap, global_step, epoch)
         print(
             " | > Training Loss: {:.5f}   Validation Loss: {:.5f}".format(
                 train_loss, val_loss),
@@ -591,7 +611,7 @@ def main(args): #pylint: disable=redefined-outer-name
         target_loss = train_loss
         if c.run_eval:
             target_loss = val_loss
-        best_loss = save_best_model(model, optimizer, target_loss, best_loss,
+        best_loss = save_best_model(model, optimizer, optimizer_st, optimizer_gst, target_loss, best_loss,
                                     OUT_PATH, global_step, epoch)
 
 

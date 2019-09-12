@@ -109,7 +109,7 @@ def _trim_model_state_dict(state_dict):
     return new_state_dict
 
 
-def save_checkpoint(model, optimizer, optimizer_st, model_loss, out_path,
+def save_checkpoint(model, optimizer, optimizer_st, optimizer_gst, model_loss, out_path,
                     current_step, epoch):
     checkpoint_path = 'checkpoint_{}.pth.tar'.format(current_step)
     checkpoint_path = os.path.join(out_path, checkpoint_path)
@@ -256,7 +256,7 @@ def setup_model(num_chars, num_speakers, c):
     print(" > Using model: {}".format(c.model))
     MyModel = importlib.import_module('models.' + c.model.lower())
     MyModel = getattr(MyModel, c.model)
-    model_gst = None
+    
     if c.model.lower() in ["tacotron"]:
         model = MyModel(
             num_chars=num_chars,
