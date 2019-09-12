@@ -163,7 +163,7 @@ def train(model, model_tacogst, criterion, optimizer, scheduler,
         if c.use_speaker_embedding:
             speaker_ids = [speaker_mapping[speaker_name]
                            for speaker_name in speaker_names]
-            speaker_ids = torch.LongTensor(speaker_ids)
+            speaker_ids = torch.LongTtrain(ensor(speaker_ids)
         else:
             speaker_ids = None
 

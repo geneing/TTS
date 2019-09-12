@@ -3,7 +3,7 @@ from torch import nn
 from layers.tacotron import Encoder, Decoder, PostCBHG
 from layers.gst_layers import GST
 from utils.generic_utils import sequence_mask
-
+from .gstnet import GSTNet
 
 class TacotronGST(nn.Module):
     def __init__(self,
@@ -21,7 +21,8 @@ class TacotronGST(nn.Module):
                  trans_agent=False,
                  forward_attn_mask=False,
                  location_attn=True,
-                 separate_stopnet=True):
+                 separate_stopnet=True,
+                 textgst=True):
         super(TacotronGST, self).__init__()
         self.r = r
         self.mel_dim = mel_dim
@@ -39,7 +40,13 @@ class TacotronGST(nn.Module):
                                location_attn, separate_stopnet)
         self.postnet = PostCBHG(mel_dim)
         self.last_linear = nn.Linear(self.postnet.cbhg.gru_features * 2, linear_dim)
-        
+
+        if textgst:
+            self.textgst = GSTNet(self.gst.encoder.recurrence.input_size,
+                                  self.gst.encoder.recurrence.hidden_size,
+                                  self.gst.style_token_layer.attention.W_value.out_features)
+        else:
+            self.textgst = None
 
     def forward(self, characters, text_lengths, mel_specs, speaker_ids=None):
         B = characters.size(0)
@@ -48,6 +55,8 @@ class TacotronGST(nn.Module):
         encoder_outputs = self.encoder(inputs)
         encoder_outputs = self._add_speaker_embedding(encoder_outputs,
                                                       speaker_ids)
+
+        textgst_outputs = self.textgst(encoder_outputs.detach(), speaker_ids=speaker_ids) if self.textgst else None #detach to prevent backprop through text-gst
         gst_outputs, _ = self.gst(mel_specs)
         gst_outputs = gst_outputs.expand(-1, encoder_outputs.size(1), -1)
         encoder_outputs = encoder_outputs + gst_outputs
@@ -56,7 +65,7 @@ class TacotronGST(nn.Module):
         mel_outputs = mel_outputs.view(B, -1, self.mel_dim)
         linear_outputs = self.postnet(mel_outputs)
         linear_outputs = self.last_linear(linear_outputs)
-        return mel_outputs, linear_outputs, alignments, stop_tokens
+        return mel_outputs, linear_outputs, alignments, stop_tokens, textgst_outputs
 
     def inference(self, characters, speaker_ids=None, style_mel=None):
         B = characters.size(0)
@@ -64,7 +73,11 @@ class TacotronGST(nn.Module):
         encoder_outputs = self.encoder(inputs)
         encoder_outputs = self._add_speaker_embedding(encoder_outputs,
                                                       speaker_ids)
-        if style_mel is not None:
+
+        if self.textgst is not None:
+            textgst_outputs = self.textgst(encoder_outputs.detach(), speaker_ids=speaker_ids)
+            encoder_outputs = encoder_outputs + textgst_outputs
+        elif style_mel is not None:
             gst_outputs = self.gst(style_mel)
             gst_outputs = gst_outputs.expand(-1, encoder_outputs.size(1), -1)
             encoder_outputs = encoder_outputs + gst_outputs

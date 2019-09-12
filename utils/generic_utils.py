@@ -9,6 +9,7 @@ import subprocess
 import importlib
 import numpy as np
 from collections import OrderedDict, Counter
+from models.gstnet import GSTNet
 
 
 class AttrDict(dict):
@@ -118,6 +119,8 @@ def save_checkpoint(model, optimizer, optimizer_st, model_loss, out_path,
     state = {
         'model': new_state_dict,
         'optimizer': optimizer.state_dict() if optimizer is not None else None,
+        'optimizer_st' : optimizer_st.state_dict() if optimizer_st is not None else None,
+        'optimizer_gst' : optimizer_gst.state_dict() if optimizer_gst is not None else None,
         'step': current_step,
         'epoch': epoch,
         'linear_loss': model_loss,
@@ -127,14 +130,15 @@ def save_checkpoint(model, optimizer, optimizer_st, model_loss, out_path,
     torch.save(state, checkpoint_path)
 
 
-def save_best_model(model, optimizer, model_loss, best_loss, out_path,
+def save_best_model(model, optimizer, optimizer_st, optimizer_gst, model_loss, best_loss, out_path,
                     current_step, epoch):
     if model_loss < best_loss:
         new_state_dict = model.state_dict()
         state = {
             'model': new_state_dict,
             'optimizer': optimizer.state_dict(),
-            'step': current_step,
+            'optimizer_st' : optimizer_st.state_dict() if optimizer_st is not None else None,
+            'optimizer_gst' : optimizer_gst.state_dict() if optimizer_gst is not None else None,            'step': current_step,
             'epoch': epoch,
             'linear_loss': model_loss,
             'date': datetime.date.today().strftime("%B %d, %Y"),
@@ -252,7 +256,8 @@ def setup_model(num_chars, num_speakers, c):
     print(" > Using model: {}".format(c.model))
     MyModel = importlib.import_module('models.' + c.model.lower())
     MyModel = getattr(MyModel, c.model)
-    if c.model.lower() in ["tacotron", "tacotrongst"]:
+    model_gst = None
+    if c.model.lower() in ["tacotron"]:
         model = MyModel(
             num_chars=num_chars,
             num_speakers=num_speakers,
@@ -269,6 +274,26 @@ def setup_model(num_chars, num_speakers, c):
             forward_attn_mask=c.forward_attn_mask,
             location_attn=c.location_attn,
             separate_stopnet=c.separate_stopnet)
+    elif c.model.lower() in ["tacotrongst"]:
+        model = MyModel(
+            num_chars=num_chars,
+            num_speakers=num_speakers,
+            r=c.r,
+            linear_dim=1025,
+            mel_dim=80,
+            memory_size=c.memory_size,
+            attn_win=c.windowing,
+            attn_norm=c.attention_norm,
+            prenet_type=c.prenet_type,
+            prenet_dropout=c.prenet_dropout,
+            forward_attn=c.use_forward_attn,
+            trans_agent=c.transition_agent,
+            forward_attn_mask=c.forward_attn_mask,
+            location_attn=c.location_attn,
+            separate_stopnet=c.separate_stopnet,
+            text_gst=c.text_gst
+        )
+
     elif c.model.lower() == "tacotron2":
         model = MyModel(
             num_chars=num_chars,
@@ -283,7 +308,7 @@ def setup_model(num_chars, num_speakers, c):
             forward_attn_mask=c.forward_attn_mask,
             location_attn=c.location_attn,
             separate_stopnet=c.separate_stopnet)
-    return model
+    return model, model_gst
 
 
 def split_dataset(items):
