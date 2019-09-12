@@ -31,6 +31,7 @@ from utils.visual import plot_alignment, plot_spectrogram
 from datasets.preprocess import get_preprocessor_by_name
 
 from models.gstnet import GSTNet
+from ranger.ranger import Ranger
 
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = False
@@ -191,7 +192,7 @@ def train(model, model_tacogst, criterion, optimizer, scheduler,
         # forward pass model
         gst_style = model(encoder_output, speaker_ids=speaker_ids)
 
-        loss = criterion(gst_style, gst_style_ground_truth.squeeze().detach())
+        loss = criterion(gst_style, gst_style_ground_truth.squeeze().data)
         loss.backward()
 
         optimizer, current_lr = weight_decay(optimizer, c.wd)
@@ -393,8 +394,30 @@ def main(args): #pylint: disable=redefined-outer-name
     
     model = setup_gstnet_model(model_tacogst, c)
 
-    optimizer = optim.Adam(model.parameters(), lr=c.lr, weight_decay=0)
+    #optimizer = optim.Adam(model.parameters(), lr=c.lr, weight_decay=0)
+    optimizer = Ranger(model.parameters())
     criterion = nn.L1Loss()
+
+    if args.restore_path:
+        checkpoint = torch.load(args.restore_path)
+        try:
+            # TODO: fix optimizer init, model.cuda() needs to be called before
+            # optimizer restore
+            # optimizer.load_state_dict(checkpoint['optimizer'])
+            if c.reinit_layers:
+                raise RuntimeError
+            model.load_state_dict(checkpoint['model'])
+        except:
+            print(" > Partial model initialization.")
+            model_dict = model.state_dict()
+            model_dict = set_init_dict(model_dict, checkpoint, c)
+            model.load_state_dict(model_dict)
+            del model_dict
+        print(
+            " > Model restored from step %d" % checkpoint['step'], flush=True)
+        args.restore_step = checkpoint['step']
+    else:
+        args.restore_step = 0
 
     if use_cuda:
         model = model.cuda()
@@ -419,7 +442,7 @@ def main(args): #pylint: disable=redefined-outer-name
     if 'best_loss' not in locals():
         best_loss = float('inf')
 
-    global_step = 0
+    global_step = args.restore_step
     for epoch in range(0, c.epochs):
         train_loss, global_step = train(model, model_tacogst, criterion,
                                         optimizer, scheduler,

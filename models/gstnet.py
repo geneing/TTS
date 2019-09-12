@@ -14,7 +14,7 @@ class GSTNet(nn.Module):
 
     def forward(self, text_encoder_input, speaker_ids=None):
         self.aggregating_gru.flatten_parameters()
-        memory, final_state = self.aggregating_gru(text_encoder_input)
-        fc_out = self.fc(final_state.squeeze(0))
+        final_state, memory = self.aggregating_gru(text_encoder_input)
+        fc_out = self.fc(final_state[:,-1,:].squeeze(0))
         output = torch.tanh(fc_out)
         return output
