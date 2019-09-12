@@ -136,6 +136,8 @@ def train(model, criterion, criterion_st, optimizer, optimizer_st, scheduler,
         if c.lr_decay:
             scheduler.step()
         optimizer.zero_grad()
+        if optimizer_gst:
+            optimizer_gst.zero_grad()
         if optimizer_st:
             optimizer_st.zero_grad()
 
@@ -172,7 +174,7 @@ def train(model, criterion, criterion_st, optimizer, optimizer_st, scheduler,
         loss = decoder_loss + postnet_loss
         if not c.separate_stopnet and c.stopnet:
             loss += stop_loss
-        if c.text_gst:
+        if c.text_gst and criterion_gst and optimizer_gst:
             mel_gst, _ = model.gst(mel_input)
             gst_loss = criterion_gst(text_gst, mel_gst.squeeze().detach())
             gst_loss.backward()
@@ -504,10 +506,13 @@ def main(args): #pylint: disable=redefined-outer-name
 
     print(" | > Num output units : {}".format(ap.num_freq), flush=True)
 
-    optimizer = optim.Adam(model.parameters(), lr=c.lr, weight_decay=0)
+    #optimizer = optim.Adam(model.parameters(), lr=c.lr, weight_decay=0)
+    optimizer = Ranger(model.parameters())
+    optimizer_gst = Ranger(model.textgst()) if c.text_gst else None
+
     if c.stopnet and c.separate_stopnet:
-        optimizer_st = optim.Adam(
-            model.decoder.stopnet.parameters(), lr=c.lr, weight_decay=0)
+        optimizer_st = Ranger(
+            model.decoder.stopnet.parameters())
     else:
         optimizer_st = None
 
@@ -516,9 +521,8 @@ def main(args): #pylint: disable=redefined-outer-name
     else:
         criterion = nn.L1Loss() if c.model in ["Tacotron", "TacotronGST"] else nn.MSELoss()
     criterion_st = nn.BCEWithLogitsLoss() if c.stopnet else None
+    criterion_gst = nn.L1Loss() if c.text_gst else None
 
-    if c.text_gst:
-        criterion_gst = nn.L1Loss()
 
     if args.restore_path:
         checkpoint = torch.load(args.restore_path)
@@ -578,7 +582,7 @@ def main(args): #pylint: disable=redefined-outer-name
 
         train_loss, global_step = train(model, criterion, criterion_st,
                                         optimizer, optimizer_st, scheduler,
-                                        ap, global_step, epoch)
+                                        ap, global_step, epoch, criterion_gst=criterion_gst, optimizer_gst=optimizer_gst)
         val_loss = evaluate(model, criterion, criterion_st, ap, global_step, epoch)
         print(
             " | > Training Loss: {:.5f}   Validation Loss: {:.5f}".format(
