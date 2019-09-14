@@ -23,7 +23,7 @@ def tts(model,
     t_1 = time.time()
     use_vocoder_model = vocoder_model is not None
     
-    model.decoder.max_decoder_steps = 1500
+    model.decoder.max_decoder_steps = 50000
     
     waveform, alignment, decoder_outputs, postnet_output, stop_tokens = synthesis(
         model, text=text, CONFIG=C, use_cuda=use_cuda, ap=ap, speaker_id=False, style_wav=None,

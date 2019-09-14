@@ -527,12 +527,11 @@ def main(args): #pylint: disable=redefined-outer-name
     print(" | > Num output units : {}".format(ap.num_freq), flush=True)
 
     #optimizer = optim.Adam(model.parameters(), lr=c.lr, weight_decay=0)
-    optimizer = Ranger(model.parameters())
-    optimizer_gst = Ranger(model.textgst.parameters()) if c.text_gst else None
+    optimizer = Ranger(model.parameters(), lr=c.lr)
+    optimizer_gst = Ranger(model.textgst.parameters(), lr=c.lr) if c.text_gst else None
 
     if c.stopnet and c.separate_stopnet:
-        optimizer_st = Ranger(
-            model.decoder.stopnet.parameters())
+        optimizer_st = Ranger(model.decoder.stopnet.parameters(), lr=c.lr)
     else:
         optimizer_st = None
 
@@ -542,7 +541,6 @@ def main(args): #pylint: disable=redefined-outer-name
         criterion = nn.L1Loss() if c.model in ["Tacotron", "TacotronGST"] else nn.MSELoss()
     criterion_st = nn.BCEWithLogitsLoss() if c.stopnet else None
     criterion_gst = nn.L1Loss() if c.text_gst else None
-
 
     if args.restore_path:
         checkpoint = torch.load(args.restore_path)
