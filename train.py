@@ -652,7 +652,7 @@ if __name__ == '__main__':
         '--text_gst_prediction',
         type=bool,
         default=True,
-        help='Predict style from the text itself for more dynamic speaking style.'
+        help='Predict style from the text itself for more dynamic speech.'
     )
 
     # DISTRUBUTED

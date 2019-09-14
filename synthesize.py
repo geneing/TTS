@@ -18,16 +18,18 @@ def tts(model,
         ap,
         use_cuda,
         batched_vocoder,
-        figures=False):
+        figures=False,
+        text_gst=True):
     t_1 = time.time()
     use_vocoder_model = vocoder_model is not None
     
     model.decoder.max_decoder_steps = 1500
     
     waveform, alignment, decoder_outputs, postnet_output, stop_tokens = synthesis(
-        model, text=text, CONFIG=C, use_cuda=use_cuda, ap=ap, speaker_id=False, style_wav=None, enable_eos_bos_chars=C.enable_eos_bos_chars)
+        model, text=text, CONFIG=C, use_cuda=use_cuda, ap=ap, speaker_id=False, style_wav=None,
+        enable_eos_bos_chars=C.enable_eos_bos_chars, text_gst=text_gst)
     if use_vocoder_model:
-        vocoder_input = (torch.FloatTensor(decoder_outputs.T).unsqueeze(0) +4.) / 8.
+        vocoder_input = torch.FloatTensor(decoder_outputs.T).unsqueeze(0)
         waveform = vocoder_model.generate(
             vocoder_input.cuda() if use_cuda else vocoder_input,
             batched=batched_vocoder,
@@ -82,6 +84,13 @@ if __name__ == "__main__":
         help="JSON file for multi-speaker model.",
         default=""
     )
+    parser.add_argument(
+        '--text_gst_prediction',
+        type=bool,
+        default=True,
+        help='Predict style from the text itself for more dynamic speech.'
+    )
+
     args = parser.parse_args()
 
     if args.vocoder_path != "":
@@ -156,7 +165,7 @@ if __name__ == "__main__":
         ap,
         args.use_cuda,
         args.batched_vocoder,
-        figures=False)
+        figures=False, text_gst=args.text_gst_prediction)
 
     # save the results
     file_name = args.text.replace(" ", "_")
