@@ -77,11 +77,16 @@ class TacotronGST(nn.Module):
 
         if self.textgst is not None and text_gst:
             textgst_outputs = self.textgst(encoder_outputs.detach(), speaker_ids=speaker_ids)
+            textgst_outputs = textgst_outputs.expand(encoder_outputs.size(0), encoder_outputs.size(1), -1)
             encoder_outputs = torch.cat((encoder_outputs, textgst_outputs), 2)
         elif style_mel is not None:
             gst_outputs = self.gst(style_mel)
             gst_outputs = gst_outputs.expand(-1, encoder_outputs.size(1), -1)
             encoder_outputs = torch.cat((encoder_outputs, gst_outputs), 2)
+        else:
+            nogst=torch.zeros([encoder_outputs.size(0), encoder_outputs.size(1), 32],dtype=encoder_outputs.dtype)
+            encoder_outputs = torch.cat((encoder_outputs, nogst), 2)
+            
         mel_outputs, alignments, stop_tokens = self.decoder.inference(
             encoder_outputs)
         mel_outputs = mel_outputs.view(B, -1, self.mel_dim)

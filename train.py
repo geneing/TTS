@@ -528,7 +528,7 @@ def main(args): #pylint: disable=redefined-outer-name
 
     #optimizer = optim.Adam(model.parameters(), lr=c.lr, weight_decay=0)
     optimizer = Ranger(model.parameters(), lr=c.lr)
-    optimizer_gst = Ranger(model.textgst.parameters(), lr=c.lr) if c.text_gst else None
+    optimizer_gst = Ranger(model.textgst.parameters(), lr=3.*c.lr) if c.text_gst else None
 
     if c.stopnet and c.separate_stopnet:
         optimizer_st = Ranger(model.decoder.stopnet.parameters(), lr=c.lr)
