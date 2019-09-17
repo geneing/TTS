@@ -84,7 +84,7 @@ class TacotronGST(nn.Module):
             gst_outputs = gst_outputs.expand(-1, encoder_outputs.size(1), -1)
             encoder_outputs = torch.cat((encoder_outputs, gst_outputs), 2)
         else:
-            nogst=torch.zeros([encoder_outputs.size(0), encoder_outputs.size(1), 32],dtype=encoder_outputs.dtype)
+            nogst=torch.zeros([encoder_outputs.size(0), encoder_outputs.size(1), 32],dtype=encoder_outputs.dtype).to(encoder_outputs.device)
             encoder_outputs = torch.cat((encoder_outputs, nogst), 2)
             
         mel_outputs, alignments, stop_tokens = self.decoder.inference(
