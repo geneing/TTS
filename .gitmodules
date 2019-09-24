@@ -1,3 +1,7 @@
 [submodule "ranger"]
 	path = ranger
 	url = git@github.com:lessw2020/Ranger-Deep-Learning-Optimizer.git
+[submodule "WaveRNN"]
+	path = WaveRNN
+	url = https://github.com/geneing/WaveRNN.git
+	branch = master
