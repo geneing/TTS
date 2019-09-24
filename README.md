@@ -1,6 +1,8 @@
 <p align="center"><img src="https://user-images.githubusercontent.com/1402048/52643646-c2102980-2edd-11e9-8c37-b72f3c89a640.png" data-canonical-src="![TTS banner](https://user-images.githubusercontent.com/1402048/52643646-c2102980-2edd-11e9-8c37-b72f3c89a640.png =250x250)
 " width="320" height="95" /></p>
 
+<img src="https://travis-ci.org/mozilla/TTS.svg?branch=dev"/>
+
 This project is a part of [Mozilla Common Voice](https://voice.mozilla.org/en). TTS aims a deep learning based Text2Speech engine, low in cost and high in quality. To begin with, you can hear a sample generated voice from [here](https://soundcloud.com/user-565970875/commonvoice-loc-sens-attn).
 
 TTS includes two different model implementations which are based on [Tacotron](https://arxiv.org/abs/1703.10135) and [Tacotron2](https://arxiv.org/abs/1712.05884). Tacotron is smaller, efficient and easier to train but Tacotron2 provides better results, especially when it is combined with a Neural vocoder. Therefore, choose depending on your project requirements.
@@ -8,9 +10,9 @@ TTS includes two different model implementations which are based on [Tacotron](h
 If you are new, you can also find [here](http://www.erogol.com/text-speech-deep-learning-architectures/) a brief post about TTS architectures and their comparisons.
 
 ## TTS Performance 
-<p align="center"><img src="https://user-images.githubusercontent.com/1402048/56998082-36d43500-6baa-11e9-8ca3-6c91d3a747bf.png"/></p>
+<p align="center"><img src="https://camo.githubusercontent.com/9fa79f977015e55eb9ec7aa32045555f60d093d3/68747470733a2f2f646973636f757273652d706161732d70726f64756374696f6e2d636f6e74656e742e73332e6475616c737461636b2e75732d656173742d312e616d617a6f6e6177732e636f6d2f6f7074696d697a65642f33582f362f342f363432386639383065396563373531633234386535393134363038393566373838316165633063365f325f363930783339342e706e67"/></p>
 
-[Details...](https://github.com/mozilla/TTS/issues/186)
+[Details...](https://github.com/mozilla/TTS/wiki/Mean-Opinion-Score-Results)
 
 ## Requirements and Installation
 Highly recommended to use [miniconda](https://conda.io/miniconda.html) for easier installation.
@@ -39,17 +41,7 @@ nvidia-docker run -it --rm -p 5002:5002 mozilla-tts
 ```
 
 ## Checkpoints and Audio Samples
-Check out [here](https://mycroft.ai/blog/available-voices/#the-human-voice-is-the-most-perfect-instrument-of-all-arvo-part) to compare the samples (except the first) below.
-
-| Models        |Dataset | Commit            | Audio Sample  | Details |
-| ------------- |:------:|:-----------------:|:--------------|:--------|
-| [Tacotron-iter-62410](https://drive.google.com/open?id=1pjJNzENL3ZNps9n7k_ktGbpEl6YPIkcZ)|LJSpeech| [99d56f7](https://github.com/mozilla/TTS/tree/99d56f7e93ccd7567beb0af8fcbd4d24c48e59e9)           | [link](https://soundcloud.com/user-565970875/99d56f7-iter62410 )|First model with plain Tacotron implementation.|
-| [Tacotron-iter-170K](https://drive.google.com/open?id=16L6JbPXj6MSlNUxEStNn28GiSzi4fu1j) |LJSpeech| [e00bc66](https://github.com/mozilla/TTS/tree/e00bc66) |[link](https://soundcloud.com/user-565970875/april-13-2018-07-06pm-e00bc66-iter170k)|More stable and longer trained model.|
-| [Tacotron-iter-270K](https://drive.google.com/drive/folders/1Q6BKeEkZyxSGsocK2p_mqgzLwlNvbHFJ?usp=sharing)|LJSpeech|[256ed63](https://github.com/mozilla/TTS/tree/256ed63)|[link](https://soundcloud.com/user-565970875/sets/samples-1650226)|Stop-Token prediction is added, to detect end of speech.|
-| [Tacotron-iter-120K](https://drive.google.com/open?id=1A5Hr6aSvfGgIiE20mBkpzyn3vvbR2APj) |LJSpeech| [bf7590](https://github.com/mozilla/TTS/tree/bf7590) | [link](https://soundcloud.com/user-565970875/sets/september-26-2018-bf7590) | Better for longer sentences |
-|[Tacotron-iter-108K](https://drive.google.com/open?id=1cAjRy6jB_3iwRSzkLhD6LutCTOQV28yV)| TWEB | [2810d57](https://github.com/mozilla/TTS/tree/2810d57) | [link](https://soundcloud.com/user-565970875/tweb-example-108k-iters-2810d57) | https://github.com/mozilla/TTS/issues/22 | 
-|[Tacotron-iter-185K](https://drive.google.com/open?id=1GU8WGix98WrR3ayjoiirmmbLUZzwg4n0) | LJSpeech | [db7f3d3](https://github.com/mozilla/TTS/tree/db7f3d3) | [link](https://soundcloud.com/user-565970875/sets/ljspeech-model-185k-iters-commit-db7f3d3) | [link](https://github.com/mozilla/TTS/issues/108) |
-|[Tacotron2-iter-260K](https://drive.google.com/open?id=1FJRjGDAqWIyZRX4CsppaIPEW8UWXCWzF)|LJSpeech|[824c091](https://github.com/mozilla/TTS/tree/824c091)|[soundcloud](https://soundcloud.com/user-565970875/ljspeech-logistic-wavernn)|[link](https://github.com/mozilla/TTS/issues/153)|
+Please visit [our wiki.](https://github.com/mozilla/TTS/wiki/Released-Models)
 
 ## Example Model Outputs
 Below you see Tacotron model state after 16K iterations with batch-size 32 with LJSpeech dataset.
@@ -85,6 +77,7 @@ Some of the open-sourced datasets that we successfully applied TTS, are linked b
 - [Nancy](http://www.cstr.ed.ac.uk/projects/blizzard/2011/lessac_blizzard2011/)
 - [TWEB](https://www.kaggle.com/bryanpark/the-world-english-bible-speech-dataset)
 - [M-AI-Labs](http://www.caito.de/2019/01/the-m-ailabs-speech-dataset/)
+- [LibriTTS](https://openslr.org/60/)
 
 ## Training and Fine-tuning LJ-Speech
 Here you can find a [CoLab](https://gist.github.com/erogol/97516ad65b44dbddb8cd694953187c5b) notebook for a hands-on example, training LJSpeech. Or you can manually follow the guideline below. 
@@ -117,6 +110,25 @@ You can also enjoy Tensorboard,  if you point Tensorboard argument```--logdir```
 
 ## Testing
 Best way to test your network is to use Notebooks under ```notebooks``` folder.
+
+## Contribution guidelines
+This repository is governed by Mozilla's code of conduct and etiquette guidelines. For more details, please read the [Mozilla Community Participation Guidelines.](https://www.mozilla.org/about/governance/policies/participation/)
+
+Please send your Pull Request to ```dev``` branch. Before making a Pull Request, check your changes for basic mistakes and style problems by using a linter. We have cardboardlinter setup in this repository, so for example, if you've made some changes and would like to run the linter on just the changed code, you can use the follow command:
+
+```bash
+pip install pylint cardboardlint
+cardboardlinter --refspec master
+```
+
+## Collaborative Experimentation Guide
+If you like to use TTS to try a new idea and like to share your experiments with the community, we urge you to use the following guideline for a better collaboration. 
+(If you have an idea for better collaboration, let us know)
+- Create a new branch.
+- Open an issue pointing your branch. 
+- Explain your experiment.
+- Share your results as you proceed. (Tensorboard log files, audio results, visuals etc.)
+- Use LJSpeech dataset (for English) if you like to compare results with the released models. (It is the most open scalable dataset for quick experimentation)
 
 ## Contact/Getting Help
 - [Wiki](https://github.com/mozilla/TTS/wiki)
@@ -162,6 +174,6 @@ Please feel free to offer new changes and pull things off. We are happy to discu
 - [Parallel WaveNet](https://arxiv.org/abs/1711.10433)
 -->
 
-### Precursor implementations
-- https://github.com/keithito/tacotron (Dataset and Test processing)
+### References
+- https://github.com/keithito/tacotron (Dataset pre-processing)
 - https://github.com/r9y9/tacotron_pytorch (Initial Tacotron architecture)

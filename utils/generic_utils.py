@@ -1,8 +1,6 @@
 import os
 import re
-import sys
 import glob
-import time
 import shutil
 import datetime
 import json
@@ -10,9 +8,8 @@ import torch
 import subprocess
 import importlib
 import numpy as np
-from collections import OrderedDict
-from torch.autograd import Variable
-from utils.text import text_to_sequence
+from collections import OrderedDict, Counter
+from models.gstnet import GSTNet
 
 
 class AttrDict(dict):
@@ -33,9 +30,13 @@ def load_config(config_path):
 
 
 def get_git_branch():
-    out = subprocess.check_output(["git", "branch"]).decode("utf8")
-    current = next(line for line in out.split("\n") if line.startswith("*"))
-    return current.replace("* ", "")
+    try:
+        out = subprocess.check_output(["git", "branch"]).decode("utf8")
+        current = next(line for line in out.split("\n") if line.startswith("*"))
+        current.replace("* ", "")
+    except subprocess.CalledProcessError:
+        current = "inside_docker"
+    return current
 
 
 def get_commit_hash():
@@ -46,8 +47,12 @@ def get_commit_hash():
     # except:
     #     raise RuntimeError(
     #         " !! Commit before training to get the commit hash.")
-    commit = subprocess.check_output(['git', 'rev-parse', '--short',
-                                      'HEAD']).decode().strip()
+    try:
+        commit = subprocess.check_output(['git', 'rev-parse', '--short',
+                                          'HEAD']).decode().strip()
+    # Not copying .git folder into docker container
+    except subprocess.CalledProcessError:
+        commit = "0000000"
     print(' > Git Hash: {}'.format(commit))
     return commit
 
@@ -70,7 +75,7 @@ def remove_experiment_folder(experiment_path):
     """Check folder if there is a checkpoint, otherwise remove the folder"""
 
     checkpoint_files = glob.glob(experiment_path + "/*.pth.tar")
-    if len(checkpoint_files) < 1:
+    if not checkpoint_files:
         if os.path.exists(experiment_path):
             try:
                 shutil.rmtree(experiment_path)
@@ -81,7 +86,6 @@ def remove_experiment_folder(experiment_path):
 
 
 def copy_config_file(config_file, out_path, new_fields):
-    config_name = os.path.basename(config_file)
     config_lines = open(config_file, "r").readlines()
     # add extra information fields
     for key, value in new_fields.items():
@@ -107,7 +111,7 @@ def _trim_model_state_dict(state_dict):
     return new_state_dict
 
 
-def save_checkpoint(model, optimizer, optimizer_st, model_loss, out_path,
+def save_checkpoint(model, optimizer, optimizer_st, optimizer_gst, model_loss, out_path,
                     current_step, epoch):
     checkpoint_path = 'checkpoint_{}.pth.tar'.format(current_step)
     checkpoint_path = os.path.join(out_path, checkpoint_path)
@@ -116,26 +120,31 @@ def save_checkpoint(model, optimizer, optimizer_st, model_loss, out_path,
     new_state_dict = model.state_dict()
     state = {
         'model': new_state_dict,
-        'optimizer': optimizer.state_dict(),
+        'optimizer': optimizer.state_dict() if optimizer is not None else None,
+        'optimizer_st' : optimizer_st.state_dict() if optimizer_st is not None else None,
+        'optimizer_gst' : optimizer_gst.state_dict() if optimizer_gst is not None else None,
         'step': current_step,
         'epoch': epoch,
         'linear_loss': model_loss,
-        'date': datetime.date.today().strftime("%B %d, %Y")
+        'date': datetime.date.today().strftime("%B %d, %Y"),
+        'r': model.decoder.r
     }
     torch.save(state, checkpoint_path)
 
 
-def save_best_model(model, optimizer, model_loss, best_loss, out_path,
+def save_best_model(model, optimizer, optimizer_st, optimizer_gst, model_loss, best_loss, out_path,
                     current_step, epoch):
     if model_loss < best_loss:
         new_state_dict = model.state_dict()
         state = {
             'model': new_state_dict,
             'optimizer': optimizer.state_dict(),
-            'step': current_step,
+            'optimizer_st' : optimizer_st.state_dict() if optimizer_st is not None else None,
+            'optimizer_gst' : optimizer_gst.state_dict() if optimizer_gst is not None else None,            'step': current_step,
             'epoch': epoch,
             'linear_loss': model_loss,
-            'date': datetime.date.today().strftime("%B %d, %Y")
+            'date': datetime.date.today().strftime("%B %d, %Y"),
+            'r': model.decoder.r
         }
         best_loss = model_loss
         bestmodel_path = 'best_model.pth.tar'
@@ -245,13 +254,15 @@ def set_init_dict(model_dict, checkpoint, c):
     return model_dict
 
 
-def setup_model(num_chars, c):
+def setup_model(num_chars, num_speakers, c):
     print(" > Using model: {}".format(c.model))
     MyModel = importlib.import_module('models.' + c.model.lower())
     MyModel = getattr(MyModel, c.model)
-    if c.model.lower() == "tacotron":
+    
+    if c.model.lower() in ["tacotron"]:
         model = MyModel(
             num_chars=num_chars,
+            num_speakers=num_speakers,
             r=c.r,
             linear_dim=1025,
             mel_dim=80,
@@ -262,11 +273,33 @@ def setup_model(num_chars, c):
             prenet_dropout=c.prenet_dropout,
             forward_attn=c.use_forward_attn,
             trans_agent=c.transition_agent,
+            forward_attn_mask=c.forward_attn_mask,
             location_attn=c.location_attn,
             separate_stopnet=c.separate_stopnet)
+    elif c.model.lower() in ["tacotrongst"]:
+        model = MyModel(
+            num_chars=num_chars,
+            num_speakers=num_speakers,
+            r=c.r,
+            linear_dim=1025,
+            mel_dim=80,
+            memory_size=c.memory_size,
+            attn_win=c.windowing,
+            attn_norm=c.attention_norm,
+            prenet_type=c.prenet_type,
+            prenet_dropout=c.prenet_dropout,
+            forward_attn=c.use_forward_attn,
+            trans_agent=c.transition_agent,
+            forward_attn_mask=c.forward_attn_mask,
+            location_attn=c.location_attn,
+            separate_stopnet=c.separate_stopnet,
+            text_gst=c.text_gst
+        )
+
     elif c.model.lower() == "tacotron2":
         model = MyModel(
             num_chars=num_chars,
+            num_speakers=num_speakers,
             r=c.r,
             attn_win=c.windowing,
             attn_norm=c.attention_norm,
@@ -274,6 +307,37 @@ def setup_model(num_chars, c):
             prenet_dropout=c.prenet_dropout,
             forward_attn=c.use_forward_attn,
             trans_agent=c.transition_agent,
+            forward_attn_mask=c.forward_attn_mask,
             location_attn=c.location_attn,
             separate_stopnet=c.separate_stopnet)
     return model
+
+
+def split_dataset(items):
+    is_multi_speaker = False
+    speakers = [item[-1] for item in items]
+    is_multi_speaker = len(set(speakers)) > 1
+    eval_split_size = 500 if 500 < len(items) * 0.01 else int(len(items) * 0.01)
+    np.random.seed(0)
+    np.random.shuffle(items)
+    if is_multi_speaker:
+        items_eval = []
+        # most stupid code ever -- Fix it !
+        while len(items_eval) < eval_split_size:
+            speakers = [item[-1] for item in items]
+            speaker_counter = Counter(speakers) 
+            item_idx = np.random.randint(0, len(items))
+            if speaker_counter[items[item_idx][-1]] > 1:
+                items_eval.append(items[item_idx])
+                del items[item_idx]
+        return items_eval, items
+    else:
+        return items[:eval_split_size], items[eval_split_size:]
+
+
+def gradual_training_scheduler(global_step, config):
+    new_values = None
+    for values in config.gradual_training:
+        if global_step >= values[0]:
+            new_values = values
+    return new_values[1], new_values[2]

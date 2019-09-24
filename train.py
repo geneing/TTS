@@ -1,7 +1,5 @@
 import argparse
-import importlib
 import os
-import shutil
 import sys
 import time
 import traceback
@@ -9,7 +7,6 @@ import traceback
 import numpy as np
 import torch
 import torch.nn as nn
-from tensorboardX import SummaryWriter
 from torch import optim
 from torch.utils.data import DataLoader
 
@@ -20,14 +17,19 @@ from layers.losses import L1LossMasked, MSELossMasked
 from utils.audio import AudioProcessor
 from utils.generic_utils import (NoamLR, check_update, count_parameters,
                                  create_experiment_folder, get_git_branch,
-                                 load_config, lr_decay,
-                                 remove_experiment_folder, save_best_model,
-                                 save_checkpoint, sequence_mask, weight_decay,
-                                 set_init_dict, copy_config_file, setup_model)
-from utils.logger import Logger, log_to_slack
+                                 load_config, remove_experiment_folder,
+                                 save_best_model, save_checkpoint, weight_decay,
+                                 set_init_dict, copy_config_file, setup_model,
+                                 split_dataset, gradual_training_scheduler)
+from utils.logger import Logger
+from utils.speakers import load_speaker_mapping, save_speaker_mapping, \
+    get_speakers
 from utils.synthesis import synthesis
 from utils.text.symbols import phonemes, symbols
 from utils.visual import plot_alignment, plot_spectrogram
+from datasets.preprocess import get_preprocessor_by_name
+
+from ranger.ranger import Ranger
 
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = False
@@ -38,21 +40,30 @@ print(" > Using CUDA: ", use_cuda)
 print(" > Number of GPUs: ", num_gpus)
 
 
-def setup_loader(is_val=False, verbose=False):
-    global ap
+def setup_loader(ap, is_val=False, verbose=False):
+    global meta_data_train
+    global meta_data_eval
+    if "meta_data_train" not in globals():
+        if c.meta_file_train is not None:
+            meta_data_train = get_preprocessor_by_name(c.dataset)(c.data_path, c.meta_file_train)
+        else:
+            meta_data_train = get_preprocessor_by_name(c.dataset)(c.data_path)
+    if "meta_data_eval" not in globals() and c.run_eval:
+        if c.meta_file_val is not None:
+            meta_data_eval = get_preprocessor_by_name(c.dataset)(c.data_path, c.meta_file_val)
+        else:
+            meta_data_eval, meta_data_train = split_dataset(meta_data_train)
     if is_val and not c.run_eval:
         loader = None
     else:
         dataset = MyDataset(
-            c.data_path,
-            c.meta_file_val if is_val else c.meta_file_train,
             c.r,
             c.text_cleaner,
-            preprocessor=preprocessor,
+            meta_data=meta_data_eval if is_val else meta_data_train,
             ap=ap,
             batch_group_size=0 if is_val else c.batch_group_size * c.batch_size,
-            min_seq_len=0 if is_val else c.min_seq_len,
-            max_seq_len=float("inf") if is_val else c.max_seq_len,
+            min_seq_len=c.min_seq_len,
+            max_seq_len=c.max_seq_len,
             phoneme_cache_path=c.phoneme_cache_path,
             use_phonemes=c.use_phonemes,
             phoneme_language=c.phoneme_language,
@@ -73,42 +84,62 @@ def setup_loader(is_val=False, verbose=False):
 
 
 def train(model, criterion, criterion_st, optimizer, optimizer_st, scheduler,
-          ap, epoch, slack_url):
-    data_loader = setup_loader(is_val=False, verbose=(epoch==0))
+          ap, global_step, epoch, criterion_gst=None, optimizer_gst=None):
+    data_loader = setup_loader(ap, is_val=False, verbose=(epoch == 0))
+    if c.use_speaker_embedding:
+        speaker_mapping = load_speaker_mapping(OUT_PATH)
     model.train()
     epoch_time = 0
     avg_postnet_loss = 0
     avg_decoder_loss = 0
     avg_stop_loss = 0
+    avg_gst_loss = 0
     avg_step_time = 0
+    avg_loader_time = 0
+
     print("\n > Epoch {}/{}".format(epoch, c.epochs), flush=True)
-    batch_n_iter = int(len(data_loader.dataset) / (c.batch_size * num_gpus))
+    if use_cuda:
+        batch_n_iter = int(len(data_loader.dataset) / (c.batch_size * num_gpus))
+    else:
+        batch_n_iter = int(len(data_loader.dataset) / c.batch_size)
+    end_time = time.time()
     for num_iter, data in enumerate(data_loader):
         start_time = time.time()
 
         # setup input data
         text_input = data[0]
         text_lengths = data[1]
-        linear_input = data[2] if c.model == "Tacotron" else None
-        mel_input = data[3]
-        mel_lengths = data[4]
-        stop_targets = data[5]
+        speaker_names = data[2]
+        linear_input = data[3] if c.model in ["Tacotron", "TacotronGST"] else None
+        mel_input = data[4]
+        mel_lengths = data[5]
+        stop_targets = data[6]
         avg_text_length = torch.mean(text_lengths.float())
         avg_spec_length = torch.mean(mel_lengths.float())
+        loader_time = time.time() - end_time
+
+        if c.use_speaker_embedding:
+            speaker_ids = [speaker_mapping[speaker_name]
+                           for speaker_name in speaker_names]
+            speaker_ids = torch.LongTensor(speaker_ids)
+        else:
+            speaker_ids = None
 
         # set stop targets view, we predict a single stop token per r frames prediction
         stop_targets = stop_targets.view(text_input.shape[0],
                                          stop_targets.size(1) // c.r, -1)
         stop_targets = (stop_targets.sum(2) > 0.0).unsqueeze(2).float().squeeze(2)
 
-        current_step = num_iter + args.restore_step + \
-            epoch * len(data_loader) + 1
+        global_step += 1
 
         # setup lr
         if c.lr_decay:
             scheduler.step()
         optimizer.zero_grad()
-        if optimizer_st: optimizer_st.zero_grad();
+        if optimizer_gst:
+            optimizer_gst.zero_grad()
+        if optimizer_st:
+            optimizer_st.zero_grad()
 
         # dispatch data to GPU
         if use_cuda:
@@ -116,30 +147,39 @@ def train(model, criterion, criterion_st, optimizer, optimizer_st, scheduler,
             text_lengths = text_lengths.cuda(non_blocking=True)
             mel_input = mel_input.cuda(non_blocking=True)
             mel_lengths = mel_lengths.cuda(non_blocking=True)
-            linear_input = linear_input.cuda(non_blocking=True) if c.model == "Tacotron" else None
+            linear_input = linear_input.cuda(non_blocking=True) if c.model in ["Tacotron", "TacotronGST"] else None
             stop_targets = stop_targets.cuda(non_blocking=True)
+            if speaker_ids is not None:
+                speaker_ids = speaker_ids.cuda(non_blocking=True)
 
         # forward pass model
-        decoder_output, postnet_output, alignments, stop_tokens = model(
-            text_input, text_lengths,  mel_input)
+        decoder_output, postnet_output, alignments, stop_tokens, text_gst = model(
+            text_input, text_lengths, mel_input, speaker_ids=speaker_ids)
 
         # loss computation
         stop_loss = criterion_st(stop_tokens, stop_targets) if c.stopnet else torch.zeros(1)
+        gst_loss = torch.zeros(1)
         if c.loss_masking:
             decoder_loss = criterion(decoder_output, mel_input, mel_lengths)
-            if c.model == "Tacotron":
+            if c.model in ["Tacotron", "TacotronGST"]:
                 postnet_loss = criterion(postnet_output, linear_input, mel_lengths)
             else:
                 postnet_loss = criterion(postnet_output, mel_input, mel_lengths)
         else:
             decoder_loss = criterion(decoder_output, mel_input)
-            if c.model == "Tacotron":
+            if c.model in ["Tacotron", "TacotronGST"]:
                 postnet_loss = criterion(postnet_output, linear_input)
             else:
                 postnet_loss = criterion(postnet_output, mel_input)
         loss = decoder_loss + postnet_loss
         if not c.separate_stopnet and c.stopnet:
             loss += stop_loss
+        if c.text_gst and criterion_gst and optimizer_gst:
+            mel_gst, _ = model.gst(mel_input)
+            gst_loss = criterion_gst(text_gst, mel_gst.squeeze().detach())
+            gst_loss.backward()
+            optimizer_gst.step()
+
 
         loss.backward()
         optimizer, current_lr = weight_decay(optimizer, c.wd)
@@ -154,52 +194,60 @@ def train(model, criterion, criterion_st, optimizer, optimizer_st, scheduler,
             optimizer_st.step()
         else:
             grad_norm_st = 0
-
+        
         step_time = time.time() - start_time
         epoch_time += step_time
 
-        if current_step % c.print_step == 0:
+        if global_step % c.print_step == 0:
             print(
                 "   | > Step:{}/{}  GlobalStep:{}  TotalLoss:{:.5f}  PostnetLoss:{:.5f}  "
-                "DecoderLoss:{:.5f}  StopLoss:{:.5f}  GradNorm:{:.5f}  "
-                "GradNormST:{:.5f}  AvgTextLen:{:.1f}  AvgSpecLen:{:.1f}  StepTime:{:.2f}  LR:{:.6f}".format(
-                    num_iter, batch_n_iter, current_step, loss.item(),
-                    postnet_loss.item(), decoder_loss.item(), stop_loss.item(),
-                    grad_norm, grad_norm_st, avg_text_length, avg_spec_length, step_time, current_lr),
+                "DecoderLoss:{:.5f}  StopLoss:{:.5f} GSTLoss:{:.5f} GradNorm:{:.5f}  "
+                "GradNormST:{:.5f}  AvgTextLen:{:.1f}  AvgSpecLen:{:.1f}  StepTime:{:.2f}  "
+                "LoaderTime:{:.2f}  LR:{:.6f}".format(
+                    num_iter, batch_n_iter, global_step, loss.item(),
+                    postnet_loss.item(), decoder_loss.item(), stop_loss.item(), gst_loss.item(),
+                    grad_norm, grad_norm_st, avg_text_length, avg_spec_length, step_time,
+                    loader_time, current_lr),
                 flush=True)
 
         # aggregate losses from processes
         if num_gpus > 1:
             postnet_loss = reduce_tensor(postnet_loss.data, num_gpus)
             decoder_loss = reduce_tensor(decoder_loss.data, num_gpus)
+            gst_loss = reduce_tensor(gst_loss.data, num_gpus) if c.text_gst else gst_loss
             loss = reduce_tensor(loss.data, num_gpus)
             stop_loss = reduce_tensor(stop_loss.data, num_gpus) if c.stopnet else stop_loss
 
         if args.rank == 0:
             avg_postnet_loss += float(postnet_loss.item())
             avg_decoder_loss += float(decoder_loss.item())
-            avg_stop_loss +=  stop_loss if type(stop_loss) is float else float(stop_loss.item())
+            avg_stop_loss += stop_loss if isinstance(stop_loss, float) else float(stop_loss.item())
+            avg_gst_loss += float(gst_loss.item())
             avg_step_time += step_time
+            avg_loader_time += loader_time
 
             # Plot Training Iter Stats
-            iter_stats = {"loss_posnet": postnet_loss.item(),
-                        "loss_decoder": decoder_loss.item(),
-                        "lr": current_lr,
-                        "grad_norm": grad_norm,
-                        "grad_norm_st": grad_norm_st,
-                        "step_time": step_time}
-            tb_logger.tb_train_iter_stats(current_step, iter_stats)
+            # reduce TB load
+            if global_step % 10 == 0:
+                iter_stats = {"loss_posnet": postnet_loss.item(),
+                              "loss_decoder": decoder_loss.item(),
+                              "gst_loss" : gst_loss.item(),
+                              "lr": current_lr,
+                              "grad_norm": grad_norm,
+                              "grad_norm_st": grad_norm_st,
+                              "step_time": step_time}
+                tb_logger.tb_train_iter_stats(global_step, iter_stats)
 
-            if current_step % c.save_step == 0:
+            if global_step % c.save_step == 0:
                 if c.checkpoint:
                     # save model
-                    save_checkpoint(model, optimizer, optimizer_st,
-                                    postnet_loss.item(), OUT_PATH, current_step,
+                    save_checkpoint(model, optimizer, optimizer_st, optimizer_gst,
+                                    postnet_loss.item(), OUT_PATH, global_step,
                                     epoch)
 
                 # Diagnostic visualizations
                 const_spec = postnet_output[0].data.cpu().numpy()
-                gt_spec =  linear_input[0].data.cpu().numpy() if c.model == "Tacotron" else  mel_input[0].data.cpu().numpy()
+                gt_spec = linear_input[0].data.cpu().numpy() if c.model in ["Tacotron", "TacotronGST"] else  mel_input[0].data.cpu().numpy()
                 align_img = alignments[0].data.cpu().numpy()
 
                 figures = {
@@ -207,61 +255,68 @@ def train(model, criterion, criterion_st, optimizer, optimizer_st, scheduler,
                     "ground_truth": plot_spectrogram(gt_spec, ap),
                     "alignment": plot_alignment(align_img)
                 }
-                tb_logger.tb_train_figures(current_step, figures)
+                tb_logger.tb_train_figures(global_step, figures)
 
                 # Sample audio
-                if c.model == "Tacotron":
+                if c.model in ["Tacotron", "TacotronGST"]:
                     train_audio = ap.inv_spectrogram(const_spec.T)
                 else:
                     train_audio = ap.inv_mel_spectrogram(const_spec.T)
-                tb_logger.tb_train_audios(current_step,
-                                            {'TrainAudio': train_audio},
-                                            c.audio["sample_rate"])
+                tb_logger.tb_train_audios(global_step,
+                                          {'TrainAudio': train_audio},
+                                          c.audio["sample_rate"])
+        end_time = time.time()
 
     avg_postnet_loss /= (num_iter + 1)
     avg_decoder_loss /= (num_iter + 1)
     avg_stop_loss /= (num_iter + 1)
+    avg_gst_loss /= (num_iter + 1)
     avg_total_loss = avg_decoder_loss + avg_postnet_loss + avg_stop_loss
     avg_step_time /= (num_iter + 1)
+    avg_loader_time /= (num_iter + 1)
 
     # print epoch stats
-    msg = \
-        "   | > EPOCH END -- GlobalStep:{}  AvgTotalLoss:{:.5f}  " \
-        "AvgPostnetLoss:{:.5f}  AvgDecoderLoss:{:.5f}  " \
-        "AvgStopLoss:{:.5f}  EpochTime:{:.2f}  " \
-        "AvgStepTime:{:.2f}".format(current_step, avg_total_loss,
-                                    avg_postnet_loss, avg_decoder_loss,
-                                    avg_stop_loss, epoch_time, avg_step_time)
-        
-    print(msg, flush=True)
-    log_to_slack(slack_url, msg)
+    print(
+        "   | > EPOCH END -- GlobalStep:{}  AvgTotalLoss:{:.5f}  "
+        "AvgPostnetLoss:{:.5f}  AvgDecoderLoss:{:.5f}  AvgGSTLoss:{:.5f} "
+        "AvgStopLoss:{:.5f}  EpochTime:{:.2f}  "
+        "AvgStepTime:{:.2f}  AvgLoaderTime:{:.2f}".format(global_step, avg_total_loss,
+                                                          avg_postnet_loss, avg_decoder_loss, avg_gst_loss,
+                                                          avg_stop_loss, epoch_time, avg_step_time,
+                                                          avg_loader_time),
+        flush=True)
+
     # Plot Epoch Stats
     if args.rank == 0:
         # Plot Training Epoch Stats
         epoch_stats = {"loss_postnet": avg_postnet_loss,
-                    "loss_decoder": avg_decoder_loss,
-                    "stop_loss": avg_stop_loss,
-                    "epoch_time": epoch_time}
-        tb_logger.tb_train_epoch_stats(current_step, epoch_stats)
+                       "loss_decoder": avg_decoder_loss,
+                       "stop_loss": avg_stop_loss,
+                       "gst_loss" : avg_gst_loss,
+                       "epoch_time": epoch_time}
+        tb_logger.tb_train_epoch_stats(global_step, epoch_stats)
         if c.tb_model_param_stats:
-            tb_logger.tb_model_weights(model, current_step)
-    return avg_postnet_loss, current_step
+            tb_logger.tb_model_weights(model, global_step)
+    return avg_postnet_loss, global_step
 
 
-def evaluate(model, criterion, criterion_st, ap, current_step, epoch):
-    data_loader = setup_loader(is_val=True)
+def evaluate(model, criterion, criterion_st, criterion_gst, ap, global_step, epoch):
+    data_loader = setup_loader(ap, is_val=True)
+    if c.use_speaker_embedding:
+        speaker_mapping = load_speaker_mapping(OUT_PATH)
     model.eval()
     epoch_time = 0
     avg_postnet_loss = 0
     avg_decoder_loss = 0
     avg_stop_loss = 0
+    avg_gst_loss = 0
     print("\n > Validation")
     if c.test_sentences_file is None:
         test_sentences = [
             "It took me quite a long time to develop a voice, and now that I have it I'm not going to be silent.",
             "Be a voice, not an echo.",
-            'It was neither an assault by the Picards nor the Burgundians, nor a hunt led along in procession, nor a revolt of scholars in the town of Laas, nor an entry of our much dread lord, monsieur the king, nor even a pretty hanging of male and female thieves by the courts of Paris.',
-            'It was barely two days since the last cavalcade of that nature, that of the Flemish ambassadors charged with concluding the marriage between the dauphin and Marguerite of Flanders.'
+            "It was neither an assault by the Picards nor the Burgundians, nor a hunt led along in procession, nor a revolt of scholars in the town of Laas, nor an entry of our much dread lord, monsieur the king, nor even a pretty hanging of male and female thieves by the courts of Paris .",
+            "It was barely two days since the last cavalcade of that nature, that of the Flemish ambassadors charged with concluding the marriage between the dauphin and Marguerite of Flanders ."
         ]
     else:
         with open(c.test_sentences_file, "r") as f:
@@ -274,10 +329,18 @@ def evaluate(model, criterion, criterion_st, ap, current_step, epoch):
                 # setup input data
                 text_input = data[0]
                 text_lengths = data[1]
-                linear_input = data[2] if c.model == "Tacotron" else None
-                mel_input = data[3]
-                mel_lengths = data[4]
-                stop_targets = data[5]
+                speaker_names = data[2]
+                linear_input = data[3] if c.model in ["Tacotron", "TacotronGST"] else None
+                mel_input = data[4]
+                mel_lengths = data[5]
+                stop_targets = data[6]
+
+                if c.use_speaker_embedding:
+                    speaker_ids = [speaker_mapping[speaker_name]
+                                   for speaker_name in speaker_names]
+                    speaker_ids = torch.LongTensor(speaker_ids)
+                else:
+                    speaker_ids = None
 
                 # set stop targets view, we predict a single stop token per r frames prediction
                 stop_targets = stop_targets.view(text_input.shape[0],
@@ -290,27 +353,35 @@ def evaluate(model, criterion, criterion_st, ap, current_step, epoch):
                     text_input = text_input.cuda()
                     mel_input = mel_input.cuda()
                     mel_lengths = mel_lengths.cuda()
-                    linear_input = linear_input.cuda() if c.model == "Tacotron" else None
+                    linear_input = linear_input.cuda() if c.model in ["Tacotron", "TacotronGST"] else None
                     stop_targets = stop_targets.cuda()
+                    if speaker_ids is not None:
+                        speaker_ids = speaker_ids.cuda()
 
                 # forward pass
-                decoder_output, postnet_output, alignments, stop_tokens =\
-                    model.forward(text_input, text_lengths, mel_input)
+                decoder_output, postnet_output, alignments, stop_tokens, text_gst =\
+                    model.forward(text_input, text_lengths, mel_input,
+                                  speaker_ids=speaker_ids)
 
                 # loss computation
                 stop_loss = criterion_st(stop_tokens, stop_targets) if c.stopnet else torch.zeros(1)
+                gst_loss = torch.zeros(1)
                 if c.loss_masking:
                     decoder_loss = criterion(decoder_output, mel_input, mel_lengths)
-                    if c.model == "Tacotron":
+                    if c.model in ["Tacotron", "TacotronGST"]:
                         postnet_loss = criterion(postnet_output, linear_input, mel_lengths)
                     else:
                         postnet_loss = criterion(postnet_output, mel_input, mel_lengths)
                 else:
                     decoder_loss = criterion(decoder_output, mel_input)
-                    if c.model == "Tacotron":
+                    if c.model in ["Tacotron", "TacotronGST"]:
                         postnet_loss = criterion(postnet_output, linear_input)
                     else:
                         postnet_loss = criterion(postnet_output, mel_input)
+                if c.text_gst:
+                    mel_gst, _ = model.gst(mel_input)
+                    gst_loss = criterion_gst(text_gst, mel_gst.squeeze().detach())
+
                 loss = decoder_loss + postnet_loss + stop_loss
 
                 step_time = time.time() - start_time
@@ -319,28 +390,30 @@ def evaluate(model, criterion, criterion_st, ap, current_step, epoch):
                 if num_iter % c.print_step == 0:
                     print(
                         "   | > TotalLoss: {:.5f}   PostnetLoss: {:.5f}   DecoderLoss:{:.5f}  "
-                        "StopLoss: {:.5f}  ".format(loss.item(),
+                        "StopLoss: {:.5f}  GSTLoss: {:.5f} ".format(loss.item(),
                                                     postnet_loss.item(),
                                                     decoder_loss.item(),
-                                                    stop_loss.item()),
+                                                    stop_loss.item(), gst_loss.item()),
                         flush=True)
 
                 # aggregate losses from processes
                 if num_gpus > 1:
                     postnet_loss = reduce_tensor(postnet_loss.data, num_gpus)
                     decoder_loss = reduce_tensor(decoder_loss.data, num_gpus)
+                    gst_loss = reduce_tensor(gst_loss.data, num_gpus)
                     if c.stopnet:
                         stop_loss = reduce_tensor(stop_loss.data, num_gpus)
 
                 avg_postnet_loss += float(postnet_loss.item())
                 avg_decoder_loss += float(decoder_loss.item())
+                avg_gst_loss += float(gst_loss.item())
                 avg_stop_loss += stop_loss.item()
 
             if args.rank == 0:
                 # Diagnostic visualizations
                 idx = np.random.randint(mel_input.shape[0])
                 const_spec = postnet_output[idx].data.cpu().numpy()
-                gt_spec = linear_input[idx].data.cpu().numpy() if c.model == "Tacotron" else  mel_input[idx].data.cpu().numpy()
+                gt_spec = linear_input[idx].data.cpu().numpy() if c.model in ["Tacotron", "TacotronGST"] else  mel_input[idx].data.cpu().numpy()
                 align_img = alignments[idx].data.cpu().numpy()
 
                 eval_figures = {
@@ -348,39 +421,45 @@ def evaluate(model, criterion, criterion_st, ap, current_step, epoch):
                     "ground_truth": plot_spectrogram(gt_spec, ap),
                     "alignment": plot_alignment(align_img)
                 }
-                tb_logger.tb_eval_figures(current_step, eval_figures)
+                tb_logger.tb_eval_figures(global_step, eval_figures)
 
                 # Sample audio
-                if c.model == "Tacotron":
+                if c.model in ["Tacotron", "TacotronGST"]:
                     eval_audio = ap.inv_spectrogram(const_spec.T)
                 else:
                     eval_audio = ap.inv_mel_spectrogram(const_spec.T)
-                tb_logger.tb_eval_audios(current_step, {"ValAudio": eval_audio}, c.audio["sample_rate"])
+                tb_logger.tb_eval_audios(global_step, {"ValAudio": eval_audio}, c.audio["sample_rate"])
 
                 # compute average losses
                 avg_postnet_loss /= (num_iter + 1)
                 avg_decoder_loss /= (num_iter + 1)
                 avg_stop_loss /= (num_iter + 1)
+                avg_gst_loss /= (num_iter + 1)
 
                 # Plot Validation Stats
                 epoch_stats = {"loss_postnet": avg_postnet_loss,
-                            "loss_decoder": avg_decoder_loss,
-                            "stop_loss": avg_stop_loss}
-                tb_logger.tb_eval_stats(current_step, epoch_stats)
+                               "loss_decoder": avg_decoder_loss,
+                               "stop_loss": avg_stop_loss,
+                               "gst_loss": avg_gst_loss}
+                tb_logger.tb_eval_stats(global_step, epoch_stats)
 
     if args.rank == 0 and epoch > c.test_delay_epochs:
         # test sentences
         test_audios = {}
         test_figures = {}
         print(" | > Synthesizing test sentences")
+        speaker_id = 0 if c.use_speaker_embedding else None
+        style_wav = c.get("style_wav_for_test")
         for idx, test_sentence in enumerate(test_sentences):
             try:
                 wav, alignment, decoder_output, postnet_output, stop_tokens = synthesis(
-                    model, test_sentence, c, use_cuda, ap)
-                file_path = os.path.join(AUDIO_PATH, str(current_step))
+                    model, test_sentence, c, use_cuda, ap,
+                    speaker_id=speaker_id,
+                    style_wav=style_wav)
+                file_path = os.path.join(AUDIO_PATH, str(global_step))
                 os.makedirs(file_path, exist_ok=True)
                 file_path = os.path.join(file_path,
-                                        "TestSentence_{}.wav".format(idx))
+                                         "TestSentence_{}.wav".format(idx))
                 ap.save_wav(wav, file_path)
                 test_audios['{}-audio'.format(idx)] = wav
                 test_figures['{}-prediction'.format(idx)] = plot_spectrogram(postnet_output, ap)
@@ -388,33 +467,80 @@ def evaluate(model, criterion, criterion_st, ap, current_step, epoch):
             except:
                 print(" !! Error creating Test Sentence -", idx)
                 traceback.print_exc()
-        tb_logger.tb_test_audios(current_step, test_audios, c.audio['sample_rate'])
-        tb_logger.tb_test_figures(current_step, test_figures)
+        tb_logger.tb_test_audios(global_step, test_audios, c.audio['sample_rate'])
+        tb_logger.tb_test_figures(global_step, test_figures)
+        
+        for idx, test_sentence in enumerate(test_sentences):
+            try:
+                wav, alignment, decoder_output, postnet_output, stop_tokens = synthesis(
+                    model, test_sentence, c, use_cuda, ap,
+                    speaker_id=speaker_id,
+                    style_wav=style_wav, text_gst=True)
+                file_path = os.path.join(AUDIO_PATH, str(global_step))
+                os.makedirs(file_path, exist_ok=True)
+                file_path = os.path.join(file_path,
+                                         "TestSentence_GST_{}.wav".format(idx))
+                ap.save_wav(wav, file_path)
+                test_audios['{}-audio-GST'.format(idx)] = wav
+                test_figures['{}-prediction-GST'.format(idx)] = plot_spectrogram(postnet_output, ap)
+                test_figures['{}-alignment-GST'.format(idx)] = plot_alignment(alignment)
+            except:
+                print(" !! Error creating Test Sentence -", idx)
+                traceback.print_exc()
+        tb_logger.tb_test_audios(global_step, test_audios, c.audio['sample_rate'])
+        tb_logger.tb_test_figures(global_step, test_figures)
     return avg_postnet_loss
 
 
-def main(args):
+#FIXME: move args definition/parsing inside of main?
+def main(args): #pylint: disable=redefined-outer-name
+    # Audio processor
+    ap = AudioProcessor(**c.audio)
+
     # DISTRUBUTED
     if num_gpus > 1:
         init_distributed(args.rank, num_gpus, args.group_id,
                          c.distributed["backend"], c.distributed["url"])
     num_chars = len(phonemes) if c.use_phonemes else len(symbols)
-    model = setup_model(num_chars, c)
+
+    if c.use_speaker_embedding:
+        speakers = get_speakers(c.data_path, c.meta_file_train, c.dataset)
+        if args.restore_path:
+            prev_out_path = os.path.dirname(args.restore_path)
+            speaker_mapping = load_speaker_mapping(prev_out_path)
+            assert all([speaker in speaker_mapping
+                        for speaker in speakers]), "As of now you, you cannot " \
+                                                   "introduce new speakers to " \
+                                                   "a previously trained model."
+        else:
+            speaker_mapping = {name: i
+                               for i, name in enumerate(speakers)}
+        save_speaker_mapping(OUT_PATH, speaker_mapping)
+        num_speakers = len(speaker_mapping)
+        print("Training with {} speakers: {}".format(num_speakers,
+                                                     ", ".join(speakers)))
+    else:
+        num_speakers = 0
+
+    model = setup_model(num_chars, num_speakers, c)
 
     print(" | > Num output units : {}".format(ap.num_freq), flush=True)
 
-    optimizer = optim.Adam(model.parameters(), lr=c.lr, weight_decay=0)
+    #optimizer = optim.Adam(model.parameters(), lr=c.lr, weight_decay=0)
+    optimizer = Ranger(model.parameters(), lr=c.lr)
+    optimizer_gst = Ranger(model.textgst.parameters(), lr=c.lr) if c.text_gst else None
+
     if c.stopnet and c.separate_stopnet:
-        optimizer_st = optim.Adam(
-            model.decoder.stopnet.parameters(), lr=c.lr, weight_decay=0)
+        optimizer_st = Ranger(model.decoder.stopnet.parameters(), lr=c.lr)
     else:
         optimizer_st = None
 
     if c.loss_masking:
-        criterion = L1LossMasked() if c.model == "Tacotron" else MSELossMasked()
+        criterion = L1LossMasked() if c.model in ["Tacotron", "TacotronGST"] else MSELossMasked()
     else:
-        criterion = nn.L1Loss() if c.model == "Tacotron" else nn.MSELoss()
+        criterion = nn.L1Loss() if c.model in ["Tacotron", "TacotronGST"] else nn.MSELoss()
     criterion_st = nn.BCEWithLogitsLoss() if c.stopnet else None
+    criterion_gst = nn.L1Loss() if c.text_gst else None
 
     if args.restore_path:
         checkpoint = torch.load(args.restore_path)
@@ -422,22 +548,19 @@ def main(args):
             # TODO: fix optimizer init, model.cuda() needs to be called before
             # optimizer restore
             # optimizer.load_state_dict(checkpoint['optimizer'])
-            if len(c.reinit_layers) > 0:
+            if c.reinit_layers:
                 raise RuntimeError
             model.load_state_dict(checkpoint['model'])
         except:
             print(" > Partial model initialization.")
-            partial_init_flag = True
             model_dict = model.state_dict()
             model_dict = set_init_dict(model_dict, checkpoint, c)
             model.load_state_dict(model_dict)
             del model_dict
         for group in optimizer.param_groups:
             group['lr'] = c.lr
-            group['initial_lr'] = c.lr
         print(
             " > Model restored from step %d" % checkpoint['step'], flush=True)
-        start_epoch = checkpoint['epoch']
         args.restore_step = checkpoint['step']
     else:
         args.restore_step = 0
@@ -445,7 +568,8 @@ def main(args):
     if use_cuda:
         model = model.cuda()
         criterion.cuda()
-        if criterion_st: criterion_st.cuda();
+        if criterion_st:
+            criterion_st.cuda()
 
     # DISTRUBUTED
     if num_gpus > 1:
@@ -465,11 +589,19 @@ def main(args):
     if 'best_loss' not in locals():
         best_loss = float('inf')
 
+    global_step = args.restore_step
     for epoch in range(0, c.epochs):
-        train_loss, current_step = train(model, criterion, criterion_st,
-                                         optimizer, optimizer_st, scheduler,
-                                         ap, epoch, args.slack_url)
-        val_loss = evaluate(model, criterion, criterion_st, ap, current_step, epoch)
+        # set gradual training
+        if c.gradual_training is not None:
+            r, c.batch_size = gradual_training_scheduler(global_step, c)
+            c.r = r
+            model.decoder.set_r(r)
+        print(" > Number of outputs per iteration:", model.decoder.r)
+
+        train_loss, global_step = train(model, criterion, criterion_st,
+                                        optimizer, optimizer_st, scheduler,
+                                        ap, global_step, epoch, criterion_gst=criterion_gst, optimizer_gst=optimizer_gst)
+        val_loss = evaluate(model, criterion, criterion_st, criterion_gst, ap, global_step, epoch)
         print(
             " | > Training Loss: {:.5f}   Validation Loss: {:.5f}".format(
                 train_loss, val_loss),
@@ -477,8 +609,8 @@ def main(args):
         target_loss = train_loss
         if c.run_eval:
             target_loss = val_loss
-        best_loss = save_best_model(model, optimizer, target_loss, best_loss,
-                                    OUT_PATH, current_step, epoch)
+        best_loss = save_best_model(model, optimizer, optimizer_st, optimizer_gst, target_loss, best_loss,
+                                    OUT_PATH, global_step, epoch)
 
 
 if __name__ == '__main__':
@@ -508,14 +640,17 @@ if __name__ == '__main__':
         type=str,
         help='path for training outputs.',
         default='')
-    
-    parser.add_argument('--slack_url', default=None,
-                        help='slack webhook notification destination link')
     parser.add_argument(
         '--output_folder',
         type=str,
         default='',
-        help='folder name for traning outputs.'
+        help='folder name for training outputs.'
+    )
+    parser.add_argument(
+        '--text_gst_prediction',
+        type=bool,
+        default=True,
+        help='Predict style from the text itself for more dynamic speech.'
     )
 
     # DISTRUBUTED
@@ -533,6 +668,8 @@ if __name__ == '__main__':
 
     # setup output paths and read configs
     c = load_config(args.config_path)
+    c.text_gst = args.text_gst_prediction
+
     _ = os.path.dirname(os.path.realpath(__file__))
     if args.data_path != '':
         c.data_path = args.data_path
@@ -559,27 +696,19 @@ if __name__ == '__main__':
         os.chmod(AUDIO_PATH, 0o775)
         os.chmod(OUT_PATH, 0o775)
 
-    if args.rank==0:
+    if args.rank == 0:
         LOG_DIR = OUT_PATH
         tb_logger = Logger(LOG_DIR)
 
-    # Conditional imports
-    preprocessor = importlib.import_module('datasets.preprocess')
-    preprocessor = getattr(preprocessor, c.dataset.lower())
-
-    # Audio processor
-    ap = AudioProcessor(**c.audio)
-
     try:
-        log_to_slack(args.slack_url, "Starting")
         main(args)
     except KeyboardInterrupt:
         remove_experiment_folder(OUT_PATH)
         try:
             sys.exit(0)
         except SystemExit:
-            os._exit(0)
-    except Exception:
-        remove_experiment_folder(OUT_PATH)
+            os._exit(0) #pylint: disable=protected-access
+    except Exception: #pylint: disable=broad-except
+        #remove_experiment_folder(OUT_PATH)
         traceback.print_exc()
         sys.exit(1)
