@@ -94,9 +94,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.vocoder_path != "":
-        assert args.use_cuda, " [!] Enable cuda for vocoder."
-        import sys
-        sys.path.append('../')
         from WaveRNN.models.wavernn import Model as VocoderModel
 
     # load the config
