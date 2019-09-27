@@ -25,7 +25,7 @@ def tts(model,
         text,
         ap,
         use_cuda,
-        batched_vocoder,
+        batched_vocoder=False,
         figures=False,
         text_gst=True):
     
@@ -187,6 +187,6 @@ if __name__ == "__main__":
                 sent.text,
                 ap,
                 use_cuda,
-                batched_vocoder=True,
-                figures=False, text_gst='True')
+                batched_vocoder=False,
+                figures=False, text_gst=True)
             ap.save_wav(wav, '%s/%d.wav'%(args.output, i+1))
