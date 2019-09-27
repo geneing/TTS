@@ -2,6 +2,8 @@ import os
 import argparse
 import torch
 import importlib
+import numpy as np
+import scipy
 
 from utils.synthesis import synthesis
 from utils.generic_utils import load_config, setup_model
@@ -27,7 +29,7 @@ def tts(model,
         use_cuda,
         batched_vocoder=False,
         figures=False,
-        text_gst=True):
+        text_gst=True, persistent=False):
     
     use_vocoder_model = vocoder_model is not None
     
@@ -35,7 +37,7 @@ def tts(model,
     
     waveform, alignment, decoder_outputs, postnet_output, stop_tokens = synthesis(
         model, text=text, CONFIG=C, use_cuda=use_cuda, ap=ap, speaker_id=None, style_wav=None,
-        enable_eos_bos_chars=C.enable_eos_bos_chars, text_gst=text_gst)
+        enable_eos_bos_chars=C.enable_eos_bos_chars, text_gst=text_gst, persistent=persistent)
     if use_vocoder_model:
         vocoder_input = torch.FloatTensor(decoder_outputs.T).unsqueeze(0)
         waveform = vocoder_model.generate(
@@ -188,5 +190,6 @@ if __name__ == "__main__":
                 ap,
                 use_cuda,
                 batched_vocoder=False,
-                figures=False, text_gst=True)
-            ap.save_wav(wav, '%s/%d.wav'%(args.output, i+1))
+                figures=False, persistent=True, text_gst=True)
+            #ap.save_wav(wav, '%s/%d.wav'%(args.output, i+1))
+            scipy.io.wavfile.write('%s/%d.wav'%(args.output, i+1), ap.sample_rate, wav.astype(np.float32))

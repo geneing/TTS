@@ -67,15 +67,15 @@ class TacotronGST(nn.Module):
         linear_outputs = self.last_linear(linear_outputs)
         return mel_outputs, linear_outputs, alignments, stop_tokens, textgst_outputs
 
-    def inference(self, characters, speaker_ids=None, style_mel=None, text_gst=True):
+    def inference(self, characters, speaker_ids=None, style_mel=None, text_gst=True, persistent=False):
         B = characters.size(0)
         inputs = self.embedding(characters)
-        encoder_outputs = self.encoder(inputs)
+        encoder_outputs = self.encoder(inputs, persistent)
         encoder_outputs = self._add_speaker_embedding(encoder_outputs,
                                                       speaker_ids)
 
         if self.textgst is not None and text_gst:
-            textgst_outputs = self.textgst(encoder_outputs.detach(), speaker_ids=speaker_ids)
+            textgst_outputs = self.textgst(encoder_outputs.detach(), speaker_ids=speaker_ids, persistent=persistent)
             encoder_outputs = encoder_outputs + textgst_outputs
         elif style_mel is not None:
             gst_outputs = self.gst(style_mel)

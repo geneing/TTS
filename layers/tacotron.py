@@ -166,8 +166,9 @@ class CBHG(nn.Module):
             1,
             batch_first=True,
             bidirectional=True)
+        self._gru_memory = None
 
-    def forward(self, inputs):
+    def forward(self, inputs, persistent=False):
         # (B, T_in, in_features)
         x = inputs
         # Needed to perform conv1d on time-axis
@@ -199,7 +200,13 @@ class CBHG(nn.Module):
         # (B, T_in, hid_features*2)
         # TODO: replace GRU with convolution as in Deep Voice 3
         self.gru.flatten_parameters()
-        outputs, _ = self.gru(x)
+
+        #keep hidden state between invocations. used for inference. note gru_memory must be initialized to None.
+        if persistent:
+            outputs, self._gru_memory = self.gru(x, self._gru_memory)
+        else:
+            outputs, self._gru_memory = self.gru(x)
+
         return outputs
 
 
@@ -215,8 +222,8 @@ class EncoderCBHG(nn.Module):
             gru_features=128,
             num_highways=4)
 
-    def forward(self, x):
-        return self.cbhg(x)
+    def forward(self, x, persistent=False):
+        return self.cbhg(x, persistent)
 
 
 class Encoder(nn.Module):
@@ -227,7 +234,7 @@ class Encoder(nn.Module):
         self.prenet = Prenet(in_features, out_features=[256, 128])
         self.cbhg = EncoderCBHG()
 
-    def forward(self, inputs):
+    def forward(self, inputs, persistent=False):
         r"""
         Args:
             inputs (FloatTensor): embedding features
@@ -235,9 +242,10 @@ class Encoder(nn.Module):
         Shapes:
             - inputs: batch x time x in_features
             - outputs: batch x time x 128*2
+            :param persistent: save RNN hidden state between invocations. used for inference.
         """
         inputs = self.prenet(inputs)
-        return self.cbhg(inputs)
+        return self.cbhg(inputs, persistent)
 
 
 class PostCBHG(nn.Module):
@@ -252,8 +260,8 @@ class PostCBHG(nn.Module):
             gru_features=128,
             num_highways=4)
 
-    def forward(self, x):
-        return self.cbhg(x)
+    def forward(self, x, persistent=False):
+        return self.cbhg(x, persistent)
 
 
 class Decoder(nn.Module):

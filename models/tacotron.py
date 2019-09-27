@@ -52,7 +52,7 @@ class Tacotron(nn.Module):
         linear_outputs = self.last_linear(linear_outputs)
         return mel_outputs, linear_outputs, alignments, stop_tokens
 
-    def inference(self, characters, speaker_ids=None):
+    def inference(self, characters, speaker_ids=None, persistent=False):
         B = characters.size(0)
         inputs = self.embedding(characters)
         encoder_outputs = self.encoder(inputs)
