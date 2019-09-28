@@ -82,7 +82,7 @@ class TacotronGST(nn.Module):
             gst_outputs = gst_outputs.expand(-1, encoder_outputs.size(1), -1)
             encoder_outputs = encoder_outputs + gst_outputs
         mel_outputs, alignments, stop_tokens = self.decoder.inference(
-            encoder_outputs)
+            encoder_outputs, persistent=persistent)
         mel_outputs = mel_outputs.view(B, -1, self.mel_dim)
         linear_outputs = self.postnet(mel_outputs)
         linear_outputs = self.last_linear(linear_outputs)

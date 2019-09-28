@@ -318,6 +318,7 @@ class Decoder(nn.Module):
         # decoder_RNN_input -> |RNN| -> RNN_state
         self.decoder_rnns = nn.ModuleList(
             [nn.GRUCell(256, 256) for _ in range(2)])
+        self.decoder_rnn_hiddens = None
         # RNN_state -> |Linear| -> mel_spec
         self.proj_to_mel = nn.Linear(256, memory_dim * self.r_init)
         # learn init values instead of zero init.
@@ -339,7 +340,7 @@ class Decoder(nn.Module):
         memory = memory.transpose(0, 1)
         return memory
 
-    def _init_states(self, inputs):
+    def _init_states(self, inputs, persistent=False):
         """
         Initialization of decoder states
         """
@@ -352,11 +353,12 @@ class Decoder(nn.Module):
             self.memory_input = torch.zeros(B, self.memory_dim, device=inputs.device)
         # decoder states
         self.attention_rnn_hidden = torch.zeros(B, 256, device=inputs.device)
-        self.decoder_rnn_hiddens = [
-            torch.zeros(B, 256, device=inputs.device)
-            for idx in range(len(self.decoder_rnns))
-        ]
-        self.context_vec = inputs.data.new(B, self.in_features).zero_()
+        if (not persistent) or (self.decoder_rnn_hiddens is None):
+            self.decoder_rnn_hiddens = [
+                torch.zeros(B, 256, device=inputs.device)
+                for idx in range(len(self.decoder_rnns))
+            ]
+            self.context_vec = inputs.data.new(B, self.in_features).zero_()
         # cache attention inputs
         self.processed_inputs = self.attention.inputs_layer(inputs)
 
@@ -367,7 +369,7 @@ class Decoder(nn.Module):
         stop_tokens = torch.stack(stop_tokens).transpose(0, 1).squeeze(-1)
         return outputs, attentions, stop_tokens
 
-    def decode(self, inputs, mask=None):
+    def decode(self, inputs, mask=None, persistent=False):
         # Prenet
         processed_memory = self.prenet(self.memory_input)
         # Attention RNN
@@ -448,7 +450,7 @@ class Decoder(nn.Module):
 
         return self._parse_outputs(outputs, attentions, stop_tokens)
 
-    def inference(self, inputs):
+    def inference(self, inputs, persistent=False):
         """
         Args:
             inputs: Encoder outputs.
@@ -460,7 +462,7 @@ class Decoder(nn.Module):
         attentions = []
         stop_tokens = []
         t = 0
-        self._init_states(inputs)
+        self._init_states(inputs, persistent=persistent)
         self.attention.init_win_idx()
         self.attention.init_states(inputs)
         while True:

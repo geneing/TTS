@@ -178,8 +178,7 @@ if __name__ == "__main__":
         nlp = spacy.load("en_core_web_sm")
         doc = nlp(txt)
         for i, sent in enumerate(doc.sents):
-            print(sent.text, 
-                  '\n\n')
+            print('\n',sent.text,'\n')
 
             _, _, _, wav = tts(
                 model,
