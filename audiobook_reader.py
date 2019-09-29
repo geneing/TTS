@@ -21,32 +21,30 @@ use_cuda = torch.cuda.is_available()
 
 
 def tts(model,
-        vocoder_model,
         C,
-        VC,
         text,
         ap,
         use_cuda,
-        batched_vocoder=False,
-        figures=False,
         text_gst=True, persistent=False):
-    
-    use_vocoder_model = vocoder_model is not None
-    
+
     model.decoder.max_decoder_steps = 50000
-    
     waveform, alignment, decoder_outputs, postnet_output, stop_tokens = synthesis(
         model, text=text, CONFIG=C, use_cuda=use_cuda, ap=ap, speaker_id=None, style_wav=None,
         enable_eos_bos_chars=C.enable_eos_bos_chars, text_gst=text_gst, persistent=persistent)
-    if use_vocoder_model:
-        vocoder_input = torch.FloatTensor(decoder_outputs.T).unsqueeze(0)
+    mels = torch.FloatTensor(decoder_outputs.T)
+    return alignment, postnet_output, stop_tokens, waveform, mels
+
+
+def vocode( vocoder_model, mels, use_cuda, batched_vocoder=False):
+    if vocoder_model is not None:
+        vocoder_input = mels.unsqueeze(0)
         waveform = vocoder_model.generate(
             vocoder_input.cuda() if use_cuda else vocoder_input,
             batched=batched_vocoder,
             target=11000,
             overlap=550)
-    return alignment, postnet_output, stop_tokens, waveform
-
+    return waveform
+    
     
 def setup_model(num_chars, num_speakers, c):
     print(" > Using model: {}".format(c.model))
@@ -170,25 +168,30 @@ if __name__ == "__main__":
     vocoder_model.load_state_dict(check['model'])
     vocoder_model.eval()
     if use_cuda:
-        vocoder_model.cuda()
-    
-    
+        vocoder_model = vocoder_model.cuda()
+    vocoder_model = None
     with open(args.input, 'r') as f:
         txt = f.read()
         nlp = spacy.load("en_core_web_sm")
         doc = nlp(txt)
+        mels=[]
         for i, sent in enumerate(doc.sents):
             print('\n',sent.text,'\n')
-
-            _, _, _, wav = tts(
+            _, _, _, wav, mel = tts(
                 model,
-                vocoder_model,
                 C,
-                VC,
                 sent.text,
                 ap,
                 use_cuda,
-                batched_vocoder=False,
-                figures=False, persistent=True, text_gst=True)
-            #ap.save_wav(wav, '%s/%d.wav'%(args.output, i+1))
-            scipy.io.wavfile.write('%s/%d.wav'%(args.output, i+1), ap.sample_rate, wav.astype(np.float32))
+                persistent=True, text_gst=False)
+
+            if vocoder_model is None:
+                scipy.io.wavfile.write('%s/%d.wav'%(args.output, i+1), ap.sample_rate, wav.astype(np.float32))
+            else:
+                mels.append(mel)
+                if (i+1)%10==0:
+                    melcat = torch.cat(mels,1)
+                    mels=[]
+                    wav = vocode( vocoder_model, melcat, use_cuda, batched_vocoder=True)
+                    scipy.io.wavfile.write('%s/%d.wav'%(args.output, i+1), ap.sample_rate, wav.astype(np.float32))
+                    #ap.save_wav(wav, '%s/%d.wav'%(args.output, i+1))
