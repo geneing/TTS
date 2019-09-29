@@ -1,4 +1,5 @@
 # coding: utf-8
+import torch
 from torch import nn
 from layers.tacotron import Encoder, Decoder, PostCBHG
 from layers.gst_layers import GST
@@ -33,8 +34,8 @@ class TacotronGST(nn.Module):
             self.speaker_embedding = nn.Embedding(num_speakers, 256)
             self.speaker_embedding.weight.data.normal_(0, 0.3)
         self.encoder = Encoder(256)
-        self.gst = GST(num_mel=80, num_heads=4, num_style_tokens=10, embedding_dim=256)
-        self.decoder = Decoder(256, mel_dim, r, memory_size, attn_win,
+        self.gst = GST(num_mel=80, num_heads=4, num_style_tokens=10, embedding_dim=32)
+        self.decoder = Decoder(256+32, mel_dim, r, memory_size, attn_win,
                                attn_norm, prenet_type, prenet_dropout,
                                forward_attn, trans_agent, forward_attn_mask,
                                location_attn, separate_stopnet)
@@ -44,7 +45,7 @@ class TacotronGST(nn.Module):
         if text_gst:
             self.textgst = GSTNet(self.gst.encoder.recurrence.input_size,
                                   self.gst.encoder.recurrence.hidden_size,
-                                  self.gst.style_token_layer.attention.W_value.out_features)
+                                  32)
         else:
             self.textgst = None
 
@@ -59,7 +60,7 @@ class TacotronGST(nn.Module):
         textgst_outputs = self.textgst(encoder_outputs.detach(), speaker_ids=speaker_ids) if self.textgst else None #detach to prevent backprop through text-gst
         gst_outputs, _ = self.gst(mel_specs)
         gst_outputs = gst_outputs.expand(-1, encoder_outputs.size(1), -1)
-        encoder_outputs = encoder_outputs + gst_outputs
+        encoder_outputs = torch.cat((encoder_outputs, gst_outputs),2)
         mel_outputs, alignments, stop_tokens = self.decoder(
             encoder_outputs, mel_specs, mask)
         mel_outputs = mel_outputs.view(B, -1, self.mel_dim)
@@ -76,11 +77,16 @@ class TacotronGST(nn.Module):
 
         if self.textgst is not None and text_gst:
             textgst_outputs = self.textgst(encoder_outputs.detach(), speaker_ids=speaker_ids, persistent=persistent)
-            encoder_outputs = encoder_outputs + textgst_outputs
+            textgst_outputs = textgst_outputs.expand(encoder_outputs.size(0), encoder_outputs.size(1), -1)
+            encoder_outputs = torch.cat((encoder_outputs, textgst_outputs), 2)
         elif style_mel is not None:
             gst_outputs = self.gst(style_mel)
             gst_outputs = gst_outputs.expand(-1, encoder_outputs.size(1), -1)
-            encoder_outputs = encoder_outputs + gst_outputs
+            encoder_outputs = torch.cat((encoder_outputs, gst_outputs), 2)
+        else:
+            nogst=torch.zeros([encoder_outputs.size(0), encoder_outputs.size(1), 32],dtype=encoder_outputs.dtype).to(encoder_outputs.device)
+            encoder_outputs = torch.cat((encoder_outputs, nogst), 2)
+            
         mel_outputs, alignments, stop_tokens = self.decoder.inference(
             encoder_outputs, persistent=persistent)
         mel_outputs = mel_outputs.view(B, -1, self.mel_dim)
