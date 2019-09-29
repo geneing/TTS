@@ -183,7 +183,7 @@ if __name__ == "__main__":
                 sent.text,
                 ap,
                 use_cuda,
-                persistent=True, text_gst=False)
+                persistent=True, text_gst=True)
 
             if vocoder_model is None:
                 scipy.io.wavfile.write('%s/%d.wav'%(args.output, i+1), ap.sample_rate, wav.astype(np.float32))
