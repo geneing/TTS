@@ -358,7 +358,7 @@ class Decoder(nn.Module):
                 torch.zeros(B, 256, device=inputs.device)
                 for idx in range(len(self.decoder_rnns))
             ]
-            self.context_vec = inputs.data.new(B, self.in_features).zero_()
+        self.context_vec = inputs.data.new(B, self.in_features).zero_()
         # cache attention inputs
         self.processed_inputs = self.attention.inputs_layer(inputs)
 

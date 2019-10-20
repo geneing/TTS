@@ -128,8 +128,8 @@ if __name__ == "__main__":
     
     
     C = load_config(os.path.join(path, 'pretrained_models/TTS/config.json'))
-    C.forward_attn_mask = True
-
+    C.forward_attn_mask = False
+    C.windowing = True
     # load the audio processor
     ap = AudioProcessor(**C.audio)
     num_speakers = 0
@@ -169,7 +169,7 @@ if __name__ == "__main__":
     vocoder_model.eval()
     if use_cuda:
         vocoder_model = vocoder_model.cuda()
-    vocoder_model = None
+    #vocoder_model = None
     with open(args.input, 'r') as f:
         txt = f.read()
         nlp = spacy.load("en_core_web_sm")
