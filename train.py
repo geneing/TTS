@@ -154,7 +154,7 @@ def train(model, criterion, criterion_st, optimizer, optimizer_st, scheduler,
 
         # forward pass model
         decoder_output, postnet_output, alignments, stop_tokens, text_gst = model(
-            text_input, text_lengths, mel_input, speaker_ids=speaker_ids)
+            text_input, text_lengths, mel_input, speaker_ids=speaker_ids, autodecoder=(np.random.uniform()>.5))
 
         # loss computation
         stop_loss = criterion_st(stop_tokens, stop_targets) if c.stopnet else torch.zeros(1)

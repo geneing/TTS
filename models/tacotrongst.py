@@ -49,7 +49,7 @@ class TacotronGST(nn.Module):
         else:
             self.textgst = None
 
-    def forward(self, characters, text_lengths, mel_specs, speaker_ids=None):
+    def forward(self, characters, text_lengths, mel_specs, speaker_ids=None, autodecoder=False):
         B = characters.size(0)
         mask = sequence_mask(text_lengths).to(characters.device)
         inputs = self.embedding(characters)
@@ -62,7 +62,7 @@ class TacotronGST(nn.Module):
         gst_outputs = gst_outputs.expand(-1, encoder_outputs.size(1), -1)
         encoder_outputs = torch.cat((encoder_outputs, gst_outputs),2)
         mel_outputs, alignments, stop_tokens = self.decoder(
-            encoder_outputs, mel_specs, mask)
+            encoder_outputs, mel_specs, mask, autodecoder=autodecoder)
         mel_outputs = mel_outputs.view(B, -1, self.mel_dim)
         linear_outputs = self.postnet(mel_outputs)
         linear_outputs = self.last_linear(linear_outputs)
