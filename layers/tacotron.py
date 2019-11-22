@@ -1,6 +1,7 @@
 # coding: utf-8
 import torch
 from torch import nn
+import numpy as np
 from .common_layers import Prenet, Attention
 
 
@@ -417,7 +418,7 @@ class Decoder(nn.Module):
             # use only the last frame prediction
             self.memory_input = new_memory[:, :self.memory_dim]
 
-    def forward(self, inputs, memory, mask, autodecoder=True):
+    def forward(self, inputs, memory, mask, autodecoder=0.):
         """
         Args:
             inputs: Encoder outputs.
@@ -440,7 +441,7 @@ class Decoder(nn.Module):
         self.attention.init_states(inputs)
         while len(outputs) < memory.size(0):
             if t > 0:
-                new_memory = outputs[-1].detach() if autodecoder else memory[t - 1]
+                new_memory = outputs[-1] if (np.random.uniform()<autodecoder) else memory[t - 1]
                 self._update_memory_input(new_memory)
             output, stop_token, attention = self.decode(inputs, mask)
             outputs += [output]

@@ -38,7 +38,7 @@ class Tacotron(nn.Module):
         self.postnet = PostCBHG(mel_dim)
         self.last_linear = nn.Linear(self.postnet.cbhg.gru_features * 2, linear_dim)
         
-    def forward(self, characters, text_lengths, mel_specs, speaker_ids=None, autodecoder=False):
+    def forward(self, characters, text_lengths, mel_specs, speaker_ids=None, autodecoder=0.):
         B = characters.size(0)
         mask = sequence_mask(text_lengths).to(characters.device)
         inputs = self.embedding(characters)

@@ -49,7 +49,7 @@ class TacotronGST(nn.Module):
         else:
             self.textgst = None
 
-    def forward(self, characters, text_lengths, mel_specs, speaker_ids=None, autodecoder=False):
+    def forward(self, characters, text_lengths, mel_specs, speaker_ids=None, autodecoder=0.):
         B = characters.size(0)
         mask = sequence_mask(text_lengths).to(characters.device)
         inputs = self.embedding(characters)
