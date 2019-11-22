@@ -2,6 +2,7 @@ import os
 import time
 import argparse
 import torch
+import json
 import string
 
 from utils.synthesis import synthesis
@@ -16,8 +17,10 @@ def tts(model,
         VC,
         text,
         ap,
+        ap_vocoder,
         use_cuda,
         batched_vocoder,
+        speaker_id=None,
         figures=False,
         text_gst=True):
     t_1 = time.time()
@@ -28,9 +31,14 @@ def tts(model,
     waveform, alignment, decoder_outputs, postnet_output, stop_tokens = synthesis(
         model, text=text, CONFIG=C, use_cuda=use_cuda, ap=ap, speaker_id=False, style_wav=None,
         enable_eos_bos_chars=C.enable_eos_bos_chars, text_gst=text_gst)
+    if C.model == "Tacotron" and use_vocoder_model:
+        postnet_output = ap.out_linear_to_mel(postnet_output.T).T
+    # correct if there is a scale difference b/w two models
+    postnet_output = ap._denormalize(postnet_output)
+    postnet_output = ap_vocoder._normalize(postnet_output)
+    
     if use_vocoder_model:
-        #vocoder_input = (torch.FloatTensor(decoder_outputs.T).unsqueeze(0)+4.)/8.
-        vocoder_input = .9*torch.FloatTensor(decoder_outputs.T).unsqueeze(0)
+        vocoder_input = torch.FloatTensor(postnet_output.T).unsqueeze(0)
         waveform = vocoder_model.generate(
             vocoder_input.cuda() if use_cuda else vocoder_input,
             batched=batched_vocoder,
@@ -86,6 +94,11 @@ if __name__ == "__main__":
         default=""
     )
     parser.add_argument(
+        '--speaker_id',
+        type=int,
+        help="target speaker_id if the model is multi-speaker.",
+        default=None)
+    parser.add_argument(
         '--text_gst_prediction',
         type=bool,
         default=True,
@@ -119,32 +132,30 @@ if __name__ == "__main__":
     model = setup_model(num_chars, num_speakers, C)
     cp = torch.load(args.model_path)
     model.load_state_dict(cp['model'])
-    model.r = cp['r']
-    model.decoder.r = cp['r']
     model.eval()
     if args.use_cuda:
         model.cuda()
+    model.decoder.set_r(cp['r'])
 
     # load vocoder model
     if args.vocoder_path != "":
         VC = load_config(args.vocoder_config_path)
+        ap_vocoder = AudioProcessor(**VC.audio)
         bits = 10
-        vocoder_model = VocoderModel(
-            rnn_dims=512,
-            fc_dims=512,
-            mode=VC.mode,
-            mulaw=VC.mulaw,
-            pad=VC.pad,
-            use_aux_net=VC.use_aux_net,
-            use_upsample_net=VC.use_upsample_net,
-            upsample_factors=VC.upsample_factors,
-            feat_dims=VC.audio["num_mels"],
-            compute_dims=128,
-            res_out_dims=128,
-            res_blocks=10,
-            hop_length=ap.hop_length,
-            sample_rate=ap.sample_rate,
-        )
+        vocoder_model = VocoderModel(rnn_dims=512,
+                                     fc_dims=512,
+                                     mode=VC.mode,
+                                     mulaw=VC.mulaw,
+                                     pad=VC.pad,
+                                     upsample_factors=VC.upsample_factors,
+                                     feat_dims=VC.audio["num_mels"],
+                                     compute_dims=128,
+                                     res_out_dims=128,
+                                     res_blocks=10,
+                                     hop_length=ap.hop_length,
+                                     sample_rate=ap.sample_rate,
+                                     use_aux_net=VC.use_aux_net,
+                                     use_upsample_net=VC.use_upsample_net)
 
         check = torch.load(args.vocoder_path)
         vocoder_model.load_state_dict(check['model'])
@@ -154,19 +165,21 @@ if __name__ == "__main__":
     else:
         vocoder_model = None
         VC = None
+        ap_vocoder = None
 
     # synthesize voice
     print(" > Text: {}".format(args.text))
-    _, _, _, wav = tts(
-        model,
-        vocoder_model,
-        C,
-        VC,
-        args.text,
-        ap,
-        args.use_cuda,
-        args.batched_vocoder,
-        figures=False, text_gst=args.text_gst_prediction)
+    _, _, _, wav = tts(model,
+                       vocoder_model,
+                       C,
+                       VC,
+                       args.text,
+                       ap,
+                       ap_vocoder,
+                       args.use_cuda,
+                       args.batched_vocoder,
+                       speaker_id=args.speaker_id,
+                       figures=False, text_gst=args.text_gst_prediction)
 
     # save the results
     file_name = args.text.replace(" ", "_")

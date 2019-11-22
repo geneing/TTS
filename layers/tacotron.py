@@ -1,7 +1,7 @@
 # coding: utf-8
 import torch
 from torch import nn
-from .common_layers import Prenet, Attention
+from .common_layers import Prenet, init_attn, Linear
 
 
 class BatchNormConv1d(nn.Module):
@@ -103,8 +103,8 @@ class CBHG(nn.Module):
             num_highways (int): number of highways layers
 
         Shapes:
-            - input: batch x time x dim
-            - output: batch x time x dim*2
+            - input: B x D x T_in
+            - output: B x T_in x D*2
     """
 
     def __init__(self,
@@ -125,13 +125,12 @@ class CBHG(nn.Module):
         # list of conv1d bank with filter size k=1...K
         # TODO: try dilational layers instead
         self.conv1d_banks = nn.ModuleList([
-            BatchNormConv1d(
-                in_features,
-                conv_bank_features,
-                kernel_size=k,
-                stride=1,
-                padding=[(k - 1) // 2, k // 2],
-                activation=self.relu) for k in range(1, K + 1)
+            BatchNormConv1d(in_features,
+                            conv_bank_features,
+                            kernel_size=k,
+                            stride=1,
+                            padding=[(k - 1) // 2, k // 2],
+                            activation=self.relu) for k in range(1, K + 1)
         ])
         # max pooling of conv bank, with padding
         # TODO: try average pooling OR larger kernel size
@@ -142,39 +141,33 @@ class CBHG(nn.Module):
         layer_set = []
         for (in_size, out_size, ac) in zip(out_features, conv_projections,
                                            activations):
-            layer = BatchNormConv1d(
-                in_size,
-                out_size,
-                kernel_size=3,
-                stride=1,
-                padding=[1, 1],
-                activation=ac)
+            layer = BatchNormConv1d(in_size,
+                                    out_size,
+                                    kernel_size=3,
+                                    stride=1,
+                                    padding=[1, 1],
+                                    activation=ac)
             layer_set.append(layer)
         self.conv1d_projections = nn.ModuleList(layer_set)
         # setup Highway layers
         if self.highway_features != conv_projections[-1]:
-            self.pre_highway = nn.Linear(
-                conv_projections[-1], highway_features, bias=False)
+            self.pre_highway = nn.Linear(conv_projections[-1],
+                                         highway_features,
+                                         bias=False)
         self.highways = nn.ModuleList([
             Highway(highway_features, highway_features)
             for _ in range(num_highways)
         ])
         # bi-directional GPU layer
-        self.gru = nn.GRU(
-            gru_features,
-            gru_features,
-            1,
-            batch_first=True,
-            bidirectional=True)
+        self.gru = nn.GRU(gru_features,
+                          gru_features,
+                          1,
+                          batch_first=True,
+                          bidirectional=True)
 
     def forward(self, inputs):
-        # (B, T_in, in_features)
-        x = inputs
-        # Needed to perform conv1d on time-axis
         # (B, in_features, T_in)
-        if x.size(-1) == self.in_features:
-            x = x.transpose(1, 2)
-        # T = x.size(-1)
+        x = inputs
         # (B, hid_features*K, T_in)
         # Concat conv1d bank outputs
         outs = []
@@ -185,10 +178,8 @@ class CBHG(nn.Module):
         assert x.size(1) == self.conv_bank_features * len(self.conv1d_banks)
         for conv1d in self.conv1d_projections:
             x = conv1d(x)
-        # (B, T_in, hid_feature)
-        x = x.transpose(1, 2)
-        # Back to the original shape
         x += inputs
+        x = x.transpose(1, 2)
         if self.highway_features != self.conv_projections[-1]:
             x = self.pre_highway(x)
         # Residual connection
@@ -236,8 +227,10 @@ class Encoder(nn.Module):
             - inputs: batch x time x in_features
             - outputs: batch x time x 128*2
         """
-        inputs = self.prenet(inputs)
-        return self.cbhg(inputs)
+        # B x T x prenet_dim
+        outputs = self.prenet(inputs)
+        outputs = self.cbhg(outputs.transpose(1, 2))
+        return outputs
 
 
 class PostCBHG(nn.Module):
@@ -270,10 +263,10 @@ class Decoder(nn.Module):
     # Pylint gets confused by PyTorch conventions here
     #pylint: disable=attribute-defined-outside-init
 
-    def __init__(self, in_features, memory_dim, r, memory_size, attn_windowing,
+    def __init__(self, in_features, memory_dim, r, memory_size, attn_type, attn_windowing,
                  attn_norm, prenet_type, prenet_dropout, forward_attn,
-                 trans_agent, forward_attn_mask, location_attn,
-                 separate_stopnet):
+                 trans_agent, forward_attn_mask, location_attn, attn_K,
+                 separate_stopnet, speaker_embedding_dim):
         super(Decoder, self).__init__()
         self.r_init = r
         self.r = r
@@ -285,8 +278,9 @@ class Decoder(nn.Module):
         self.separate_stopnet = separate_stopnet
         self.query_dim = 256
         # memory -> |Prenet| -> processed_memory
+        prenet_dim = memory_dim * self.memory_size + speaker_embedding_dim if self.use_memory_queue else memory_dim + speaker_embedding_dim
         self.prenet = Prenet(
-            memory_dim * self.memory_size if self.use_memory_queue else memory_dim,
+            prenet_dim,
             prenet_type,
             prenet_dropout,
             out_features=[256, 128])
@@ -294,7 +288,8 @@ class Decoder(nn.Module):
         # attention_rnn generates queries for the attention mechanism
         self.attention_rnn = nn.GRUCell(in_features + 128, self.query_dim)
 
-        self.attention = Attention(query_dim=self.query_dim,
+        self.attention = init_attn(attn_type=attn_type,
+                                   query_dim=self.query_dim,
                                    embedding_dim=in_features,
                                    attention_dim=128,
                                    location_attention=location_attn,
@@ -304,7 +299,8 @@ class Decoder(nn.Module):
                                    norm=attn_norm,
                                    forward_attn=forward_attn,
                                    trans_agent=trans_agent,
-                                   forward_attn_mask=forward_attn_mask)
+                                   forward_attn_mask=forward_attn_mask,
+                                   attn_K=attn_K)
         # (processed_memory | attention context) -> |Linear| -> decoder_RNN_input
         self.project_to_decoder_in = nn.Linear(256 + in_features, 256)
         # decoder_RNN_input -> |RNN| -> RNN_state
@@ -322,11 +318,9 @@ class Decoder(nn.Module):
         """
         Reshape the spectrograms for given 'r'
         """
-        B = memory.shape[0]
         # Grouping multiple frames if necessary
         if memory.size(-1) == self.memory_dim:
-            memory = memory.contiguous()
-            memory = memory.view(B, memory.size(1) // self.r, -1)
+            memory = memory.view(memory.shape[0], memory.size(1) // self.r, -1)
         # Time first (T_decoder, B, memory_dim)
         memory = memory.transpose(0, 1)
         return memory
@@ -339,24 +333,27 @@ class Decoder(nn.Module):
         T = inputs.size(1)
         # go frame as zeros matrix
         if self.use_memory_queue:
-            self.memory_input = torch.zeros(B, self.memory_dim * self.memory_size, device=inputs.device)
+            self.memory_input = torch.zeros(1, device=inputs.device).repeat(B, self.memory_dim * self.memory_size)
         else:
-            self.memory_input = torch.zeros(B, self.memory_dim, device=inputs.device)
+            self.memory_input = torch.zeros(1, device=inputs.device).repeat(B, self.memory_dim)
         # decoder states
-        self.attention_rnn_hidden = torch.zeros(B, 256, device=inputs.device)
+        self.attention_rnn_hidden = torch.zeros(1, device=inputs.device).repeat(B, 256)
         self.decoder_rnn_hiddens = [
-            torch.zeros(B, 256, device=inputs.device)
+            torch.zeros(1, device=inputs.device).repeat(B, 256)
             for idx in range(len(self.decoder_rnns))
         ]
         self.context_vec = inputs.data.new(B, self.in_features).zero_()
         # cache attention inputs
-        self.processed_inputs = self.attention.inputs_layer(inputs)
+        self.processed_inputs = self.attention.preprocess_inputs(inputs)
 
     def _parse_outputs(self, outputs, attentions, stop_tokens):
         # Back to batch first
         attentions = torch.stack(attentions).transpose(0, 1)
+        stop_tokens = torch.stack(stop_tokens).transpose(0, 1)
         outputs = torch.stack(outputs).transpose(0, 1).contiguous()
-        stop_tokens = torch.stack(stop_tokens).transpose(0, 1).squeeze(-1)
+        outputs = outputs.view(
+            outputs.size(0), -1, self.memory_dim)
+        outputs = outputs.transpose(1, 2)
         return outputs, attentions, stop_tokens
 
     def decode(self, inputs, mask=None):
@@ -405,9 +402,10 @@ class Decoder(nn.Module):
                 self.memory_input = new_memory[:, :self.memory_size * self.memory_dim]
         else:
             # use only the last frame prediction
-            self.memory_input = new_memory[:, :self.memory_dim]
+            # assert new_memory.shape[-1] == self.r * self.memory_dim
+            self.memory_input = new_memory[:, self.memory_dim * (self.r - 1):]
 
-    def forward(self, inputs, memory, mask):
+    def forward(self, inputs, memory, mask, speaker_embeddings=None):
         """
         Args:
             inputs: Encoder outputs.
@@ -432,21 +430,24 @@ class Decoder(nn.Module):
             if t > 0:
                 new_memory = memory[t - 1]
                 self._update_memory_input(new_memory)
+            if speaker_embeddings is not None:
+                self.memory_input = torch.cat([self.memory_input, speaker_embeddings], dim=-1)
             output, stop_token, attention = self.decode(inputs, mask)
             outputs += [output]
             attentions += [attention]
-            stop_tokens += [stop_token]
+            stop_tokens += [stop_token.squeeze(1)]
             t += 1
-
         return self._parse_outputs(outputs, attentions, stop_tokens)
 
-    def inference(self, inputs):
+    def inference(self, inputs, speaker_embeddings=None):
         """
         Args:
-            inputs: Encoder outputs.
+            inputs: encoder outputs.
+            speaker_embeddings: speaker vectors.
 
         Shapes:
             - inputs: batch x time x encoder_out_dim
+            - speaker_embeddings: batch x embed_dim
         """
         outputs = []
         attentions = []
@@ -459,6 +460,8 @@ class Decoder(nn.Module):
             if t > 0:
                 new_memory = outputs[-1]
                 self._update_memory_input(new_memory)
+            if speaker_embeddings is not None:
+                self.memory_input = torch.cat([self.memory_input, speaker_embeddings], dim=-1)
             output, stop_token, attention = self.decode(inputs, None)
             stop_token = torch.sigmoid(stop_token.data)
             outputs += [output]

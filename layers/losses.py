@@ -1,6 +1,8 @@
+import numpy as np
+import torch
 from torch import nn
 from torch.nn import functional
-from utils.generic_utils import sequence_mask
+from TTS.utils.generic_utils import sequence_mask
 
 
 class L1LossMasked(nn.Module):
@@ -16,7 +18,7 @@ class L1LossMasked(nn.Module):
             length: A Variable containing a LongTensor of size (batch,)
                 which contains the length of each data in a batch.
         Returns:
-            loss: An average loss value masked by the length.
+            loss: An average loss value in range [0, 1] masked by the length.
         """
         # mask: (batch, max_len, 1)
         target.requires_grad = False
@@ -42,7 +44,7 @@ class MSELossMasked(nn.Module):
             length: A Variable containing a LongTensor of size (batch,)
                 which contains the length of each data in a batch.
         Returns:
-            loss: An average loss value masked by the length.
+            loss: An average loss value in range [0, 1] masked by the length.
         """
         # mask: (batch, max_len, 1)
         target.requires_grad = False
@@ -52,4 +54,19 @@ class MSELossMasked(nn.Module):
         loss = functional.mse_loss(
             x * mask, target * mask, reduction="sum")
         loss = loss / mask.sum()
+        return loss
+
+
+class AttentionEntropyLoss(nn.Module):
+    # pylint: disable=R0201
+    def forward(self, align):
+        """
+        Forces attention to be more decisive by penalizing
+        soft attention weights
+
+        TODO: arguments
+        TODO: unit_test
+        """
+        entropy = torch.distributions.Categorical(probs=align).entropy()
+        loss = (entropy / np.log(align.shape[1])).mean()
         return loss

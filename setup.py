@@ -62,8 +62,15 @@ setup(
     version=version,
     url='https://github.com/mozilla/TTS',
     description='Text to Speech with Deep Learning',
-    package_dir={'TTS': '.'},
-    packages=['TTS'] + ['TTS.' + pkg for pkg in find_packages()],
+    license='MPL-2.0',
+    package_dir={'': 'tts_namespace'},
+    packages=find_packages('tts_namespace'),
+    project_urls={
+        'Documentation': 'https://github.com/mozilla/TTS/wiki',
+        'Tracker': 'https://github.com/mozilla/TTS/issues',
+        'Repository': 'https://github.com/mozilla/TTS',
+        'Discussions': 'https://discourse.mozilla.org/c/tts',
+    },
     cmdclass={
         'build_py': build_py,
         'develop': develop,
@@ -75,12 +82,16 @@ setup(
         "librosa==0.6.2",
         "unidecode==0.4.20",
         "tensorboardX",
-        "matplotlib==2.0.2",
+        "matplotlib",
         "Pillow",
         "flask",
         # "lws",
         "tqdm",
+        "bokeh==1.4.0",
         "soundfile",
         "phonemizer @ https://github.com/bootphon/phonemizer/tarball/master",
     ],
+    dependency_links=[
+        "http://github.com/bootphon/phonemizer/tarball/master#egg=phonemizer-1.0.1"
+    ]
 )
