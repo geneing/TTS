@@ -6,20 +6,20 @@ import traceback
 
 import torch
 from torch.utils.data import DataLoader
-from TTS.datasets.preprocess import load_meta_data
-from TTS.speaker_encoder.dataset import MyDataset
-from TTS.speaker_encoder.loss import GE2ELoss
-from TTS.speaker_encoder.model import SpeakerEncoder
-from TTS.speaker_encoder.visual import plot_embeddings
-from TTS.speaker_encoder.generic_utils import save_best_model
-from TTS.utils.audio import AudioProcessor
-from TTS.utils.generic_utils import (NoamLR, check_update, copy_config_file,
+from datasets.preprocess import load_meta_data
+from speaker_encoder.dataset import MyDataset
+from speaker_encoder.loss import GE2ELoss
+from speaker_encoder.model import SpeakerEncoder
+from speaker_encoder.visual import plot_embeddings
+from speaker_encoder.generic_utils import save_best_model
+from utils.audio import AudioProcessor
+from utils.generic_utils import (NoamLR, check_update, copy_config_file,
                                      count_parameters,
                                      create_experiment_folder, get_git_branch,
                                      load_config,
                                      remove_experiment_folder, set_init_dict)
-from TTS.utils.logger import Logger
-from TTS.utils.radam import RAdam
+from utils.logger import Logger
+from utils.radam import RAdam
 
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = True

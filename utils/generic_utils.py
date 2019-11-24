@@ -284,7 +284,7 @@ def set_init_dict(model_dict, checkpoint, c):
 
 def setup_model(num_chars, num_speakers, c):
     print(" > Using model: {}".format(c.model))
-    MyModel = importlib.import_module('TTS.models.' + c.model.lower())
+    MyModel = importlib.import_module('models.' + c.model.lower())
     MyModel = getattr(MyModel, c.model)
     if c.model.lower() in ["tacotron"]:
         model = MyModel(num_chars=num_chars,
@@ -307,15 +307,15 @@ def setup_model(num_chars, num_speakers, c):
                         separate_stopnet=c.separate_stopnet,
                         bidirectional_decoder=c.bidirectional_decoder)
     elif c.model.lower() in ["tacotrongst"]:
-        #TODO: EI Fix
-        blah
         model = MyModel(
             num_chars=num_chars,
             num_speakers=num_speakers,
             r=c.r,
-            linear_dim=1025,
-            mel_dim=80,
+            postnet_output_dim=c.audio['num_freq'],
+            decoder_output_dim=c.audio['num_mels'],
+            gst=c.use_gst,
             memory_size=c.memory_size,
+            attn_type=c.attention_type,
             attn_win=c.windowing,
             attn_norm=c.attention_norm,
             prenet_type=c.prenet_type,
@@ -324,7 +324,9 @@ def setup_model(num_chars, num_speakers, c):
             trans_agent=c.transition_agent,
             forward_attn_mask=c.forward_attn_mask,
             location_attn=c.location_attn,
+            attn_K=c.attention_heads,
             separate_stopnet=c.separate_stopnet,
+            bidirectional_decoder=c.bidirectional_decoder,
             text_gst=c.text_gst
         )
     elif c.model.lower() == "tacotron2":

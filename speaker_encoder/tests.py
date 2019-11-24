@@ -2,9 +2,9 @@ import os
 import unittest
 import torch as T
 
-from TTS.speaker_encoder.model import SpeakerEncoder
-from TTS.speaker_encoder.loss import GE2ELoss
-from TTS.utils.generic_utils import load_config
+from speaker_encoder.model import SpeakerEncoder
+from speaker_encoder.loss import GE2ELoss
+from utils.generic_utils import load_config
 
 
 file_path = os.path.dirname(os.path.realpath(__file__)) + "/../tests/"

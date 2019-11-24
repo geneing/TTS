@@ -118,7 +118,7 @@ def format_data(data):
 
 
 def train(model, criterion, criterion_st, optimizer, optimizer_st, scheduler,
-          ap, global_step, epoch):
+          ap, global_step, epoch, criterion_gst, optimizer_gst):
     data_loader = setup_loader(ap, model.decoder.r, is_val=False,
                                verbose=(epoch == 0))
     model.train()
@@ -592,7 +592,10 @@ def main(args):  # pylint: disable=redefined-outer-name
     #optimizer = RAdam(params, lr=c.lr, weight_decay=0)
     #optimizer = optim.Adam(model.parameters(), lr=c.lr, weight_decay=0)
     optimizer = Ranger(model.parameters(), lr=c.lr)
-    optimizer_gst = Ranger(model.textgst.parameters(), lr=c.lr) if c.text_gst else None
+    if c.text_gst:
+        optimizer_gst = Ranger(model.textgst.parameters(), lr=c.lr)
+    else:
+        optimizer_gst = None
 
     if c.stopnet and c.separate_stopnet:
         # optimizer_st = RAdam(model.decoder.stopnet.parameters(),
