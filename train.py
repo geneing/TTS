@@ -372,10 +372,10 @@ def evaluate(model, criterion, criterion_st, criterion_gst, ap, global_step, epo
 
                 # forward pass model
                 if c.bidirectional_decoder:
-                    decoder_output, postnet_output, alignments, stop_tokens, decoder_backward_output, alignments_backward = model(
+                    decoder_output, postnet_output, alignments, stop_tokens, decoder_backward_output, alignments_backward, text_gst = model(
                         text_input, text_lengths, mel_input, speaker_ids=speaker_ids)
                 else:
-                    decoder_output, postnet_output, alignments, stop_tokens, text_gst = model(
+                    decoder_output, postnet_output, alignments, stop_tokens, decoder_backward_output, alignments_backward, text_gst = model(
                         text_input, text_lengths, mel_input, speaker_ids=speaker_ids)
 
                 # loss computation
@@ -398,7 +398,7 @@ def evaluate(model, criterion, criterion_st, criterion_gst, ap, global_step, epo
                     else:
                         postnet_loss = criterion(postnet_output, mel_input)
                 if c.text_gst:
-                    mel_gst, _ = model.gst(mel_input)
+                    mel_gst, _ = model.gst_layer(mel_input)
                     gst_loss = criterion_gst(text_gst, mel_gst.squeeze().detach())
 
                 loss = decoder_loss + postnet_loss + stop_loss
