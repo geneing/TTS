@@ -168,7 +168,7 @@ def train(model, criterion, criterion_st, optimizer, optimizer_st, scheduler,
             decoder_output, postnet_output, alignments, stop_tokens, decoder_backward_output, alignments_backward, text_gst = model(
                 text_input, text_lengths, mel_input, speaker_ids=speaker_ids)
         else:
-            decoder_output, postnet_output, alignments, stop_tokens, text_gst = model(
+            decoder_output, postnet_output, alignments, stop_tokens, decoder_backward_output, alignments_backward, text_gst = model(
                 text_input, text_lengths, mel_input, speaker_ids=speaker_ids)
 
         # loss computation
@@ -192,7 +192,7 @@ def train(model, criterion, criterion_st, optimizer, optimizer_st, scheduler,
         if not c.separate_stopnet and c.stopnet:
             loss += stop_loss
         if c.text_gst and criterion_gst and optimizer_gst:
-            mel_gst, _ = model.gst(mel_input)
+            mel_gst, _ = model.gst_layer(mel_input)
             gst_loss = criterion_gst(text_gst, mel_gst.squeeze().detach())
             gst_loss.backward()
             optimizer_gst.step()

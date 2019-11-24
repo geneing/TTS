@@ -66,8 +66,8 @@ class TacotronGST(nn.Module):
                 nn.Linear(256, proj_speaker_dim), nn.Tanh())
             self.speaker_embeddings = None
         # global style token layers
+        gst_embedding_dim = 32
         if self.gst or text_gst:
-            gst_embedding_dim = 256
             self.gst_layer = GST(num_mel=80,
                                  num_heads=4,
                                  num_style_tokens=10,
@@ -76,7 +76,7 @@ class TacotronGST(nn.Module):
         if text_gst:
             self.textgst = GSTNet(self.gst_layer.encoder.recurrence.input_size,
                                   self.gst_layer.encoder.recurrence.hidden_size,
-                                  32)
+                                  gst_embedding_dim)
         else:
             self.textgst = None
 
@@ -146,6 +146,9 @@ class TacotronGST(nn.Module):
         mel_outputs = mel_outputs.transpose(1, 2).contiguous()
         if self.bidirectional_decoder:
             mel_outputs_backward, alignments_backward = self._backward_inference(mel_specs, encoder_outputs, mask)
+        else:
+            mel_outputs_backward = None
+            alignments_backward = None
         
         return mel_outputs, linear_outputs, alignments, stop_tokens, mel_outputs_backward, alignments_backward, textgst_outputs
 
