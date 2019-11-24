@@ -96,7 +96,7 @@ class TacotronGST(nn.Module):
                 self.speaker_embeddings).squeeze(1)
 
     def compute_gst(self, inputs, mel_specs):
-        gst_outputs = self.gst_layer(mel_specs)
+        gst_outputs, _ = self.gst_layer(mel_specs)
         inputs = self._add_speaker_embedding(inputs, gst_outputs)
         return inputs
 
