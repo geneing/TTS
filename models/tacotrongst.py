@@ -182,7 +182,7 @@ class TacotronGST(nn.Module):
             
         mel_outputs, alignments, stop_tokens = self.decoder.inference(
             encoder_outputs)
-        mel_outputs = mel_outputs.view(B, -1, self.mel_dim)
+        mel_outputs = mel_outputs.contiguous().view(B, -1, self.mel_dim)
         linear_outputs = self.postnet(mel_outputs)
         linear_outputs = self.last_linear(linear_outputs)
         mel_outputs = mel_outputs.transpose(1,2).contiguous()
