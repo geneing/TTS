@@ -1,5 +1,6 @@
 # coding: utf-8
 import torch
+import copy
 from torch import nn
 from layers.tacotron import Encoder, Decoder, PostCBHG
 from layers.gst_layers import GST

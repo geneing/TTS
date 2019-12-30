@@ -509,7 +509,7 @@ def evaluate(model, criterion, criterion_st, criterion_gst, ap, global_step, epo
                 wav, alignment, decoder_output, postnet_output, stop_tokens = synthesis(
                     model, test_sentence, c, use_cuda, ap,
                     speaker_id=speaker_id,
-                    style_wav=style_wav)
+                    style_wav=style_wav, text_gst=False)
                 file_path = os.path.join(AUDIO_PATH, str(global_step))
                 os.makedirs(file_path, exist_ok=True)
                 file_path = os.path.join(file_path,
@@ -672,13 +672,16 @@ def main(args):  # pylint: disable=redefined-outer-name
         train_loss, global_step = train(model, criterion, criterion_st,
                                         optimizer, optimizer_st, scheduler,
                                         ap, global_step, epoch, criterion_gst=criterion_gst, optimizer_gst=optimizer_gst)
-        val_loss = evaluate(model, criterion, criterion_st, criterion_gst, ap, global_step, epoch)
-        print(" | > Training Loss: {:.5f}   Validation Loss: {:.5f}".format(
-                train_loss, val_loss),
-            flush=True)
+
         target_loss = train_loss
-        if c.run_eval:
-            target_loss = val_loss
+        
+        if epoch % 5 == 0:
+            val_loss = evaluate(model, criterion, criterion_st, criterion_gst, ap, global_step, epoch)
+            print(" | > Training Loss: {:.5f}   Validation Loss: {:.5f}".format(
+                train_loss, val_loss),
+                flush=True)
+            if c.run_eval:
+                target_loss = val_loss
         best_loss = save_best_model(model, optimizer, optimizer_st, optimizer_gst, target_loss, best_loss,
                                     OUT_PATH, global_step, epoch)
 

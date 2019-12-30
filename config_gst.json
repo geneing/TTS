@@ -53,12 +53,11 @@
 
     // TACOTRON PRENET
     "memory_size": -1,              // ONLY TACOTRON - size of the memory queue used fro storing last decoder predictions for auto-regression. If < 0, memory queue is disabled and decoder only uses the last prediction frame.
-    "attention_norm": "sigmoid",   // softmax or sigmoid. Suggested to use softmax for Tacotron2 and sigmoid for Tacotron.
     "prenet_type": "original",     // "original" or "bn".
     "prenet_dropout": true,        // enable/disable dropout at prenet. 
 
     // ATTENTION
-    "attention_type": "graves",  // 'original' or 'graves'
+    "attention_type": "original",  // 'original' or 'graves'
     "attention_heads": 5,          // number of attention heads (only for 'graves')
     "attention_norm": "sigmoid",   // softmax or sigmoid. Suggested to use softmax for Tacotron2 and sigmoid for Tacotron.
     "windowing": false,            // Enables attention windowing. Used only in eval mode.
@@ -66,7 +65,7 @@
     "forward_attn_mask": false,    // Additional masking forcing monotonicity only in eval mode.
     "transition_agent": false,     // enable/disable transition agent of forward attention.
     "location_attn": true,        // enable_disable location sensitive attention. It is enabled for TACOTRON by default.
-    "bidirectional_decoder": false,  // use https://arxiv.org/abs/1907.09006. Use it, if attention does not work well with your dataset.
+    "bidirectional_decoder": true,  // use https://arxiv.org/abs/1907.09006. Use it, if attention does not work well with your dataset.
 
     // STOPNET
     "stopnet": true,               // Train stopnet predicting the end of synthesis. 
@@ -81,8 +80,6 @@
     // DATA LOADING
     "text_cleaner": "phoneme_cleaners",
     "enable_eos_bos_chars": false, // enable/disable beginning of sentence and end of sentence chars.
-    "num_loader_workers": 4,        // number of training data loader processes. Don't set it too big. 4-8 are good values.
-    "num_val_loader_workers": 4,    // number of evaluation data loader processes.
     "batch_group_size": 0,  //Number of batches to shuffle after bucketing.
 
     "run_eval": true,
