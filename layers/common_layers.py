@@ -130,6 +130,9 @@ class GravesAttention(nn.Module):
         torch.nn.init.constant_(self.N_a[2].bias[10:15], 0.5)
         torch.nn.init.constant_(self.N_a[2].bias[5:10], 10)
 
+    def init_win_idx(self):
+        pass
+    
     def init_states(self, inputs):
         if self.J is None or inputs.shape[1] > self.J.shape[-1] or inputs.shape[0] != self.J.shape[0] :
             self.J = torch.arange(0, inputs.shape[1], dtype=torch.float32).to(inputs.device).expand([inputs.shape[0], self.K, inputs.shape[1]])
