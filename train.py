@@ -66,11 +66,11 @@ def setup_loader(ap, r, is_val=False, verbose=False):
             batch_size=c.eval_batch_size if is_val else c.batch_size,
             shuffle=False,
             collate_fn=dataset.collate_fn,
-            drop_last=False,
+            drop_last=True,
             sampler=sampler,
             num_workers=c.num_val_loader_workers
             if is_val else c.num_loader_workers,
-            pin_memory=False)
+            pin_memory=True)
     return loader
 
 def format_data(data):
