@@ -64,18 +64,18 @@ class TacotronGST(nn.Module):
             self.speaker_project_mel = nn.Sequential(
                 nn.Linear(256, proj_speaker_dim), nn.Tanh())
             self.speaker_embeddings = None
+
         # global style token layers
-        gst_embedding_dim = 32
         if self.gst or text_gst:
             self.gst_layer = GST(num_mel=80,
                                  num_heads=4,
                                  num_style_tokens=10,
-                                 embedding_dim=gst_embedding_dim)
+                                 embedding_dim=decoder_dim)
 
         if text_gst:
             self.textgst = GSTNet(self.gst_layer.encoder.recurrence.input_size,
                                   self.gst_layer.encoder.recurrence.hidden_size,
-                                  gst_embedding_dim)
+                                  self.gst_layer.style_token_layer.attention.W_value.out_features)
         else:
             self.textgst = None
 
