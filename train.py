@@ -122,11 +122,13 @@ def train(model, criterion, criterion_st, optimizer, optimizer_st, scheduler,
     model.train()
     epoch_time = 0
     train_values = {
+        'avg_total_loss': 0,
         'avg_postnet_loss': 0,
         'avg_decoder_loss': 0,
         'avg_stop_loss': 0,
         'avg_align_score': 0,
         'avg_step_time': 0,
+        'avg_gst_loss': 0,
         'avg_loader_time': 0,
         'avg_alignment_score': 0
     }
@@ -251,18 +253,12 @@ def train(model, criterion, criterion_st, optimizer, optimizer_st, scheduler,
         if args.rank == 0:
             update_train_values = {
                 'avg_total_loss': float(loss.item()),
-                'avg_postnet_loss':
-                float(postnet_loss.item()),
-                'avg_decoder_loss':
-                float(decoder_loss.item()),
-                'avg_stop_loss':
-                stop_loss
-                if isinstance(stop_loss, float) else float(stop_loss.item()),
+                'avg_postnet_loss': float(postnet_loss.item()),
+                'avg_decoder_loss': float(decoder_loss.item()),
+                'avg_stop_loss': stop_loss  if isinstance(stop_loss, float) else float(stop_loss.item()),
                 'avg_gst_loss': float(gst_loss.item()),
-                'avg_step_time':
-                step_time,
-                'avg_loader_time':
-                loader_time
+                'avg_step_time': step_time,
+                'avg_loader_time': loader_time
             }
             keep_avg.update_values(update_train_values)
 
@@ -491,7 +487,7 @@ def evaluate(model, criterion, criterion_st, criterion_gst, ap, global_step, epo
                 tb_logger.tb_eval_stats(global_step, epoch_stats)
                 tb_logger.tb_eval_figures(global_step, eval_figures)
 
-    if args.rank == 0 and epoch > c.test_delay_epochs:
+    if args.rank == 0 and epoch > c.test_delay_epochs and epoch%5==0:
         if c.test_sentences_file is None:
             test_sentences = [
                 "It took me quite a long time to develop a voice, and now that I have it I'm not going to be silent.",
