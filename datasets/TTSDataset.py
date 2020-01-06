@@ -5,8 +5,8 @@ import torch
 import random
 from torch.utils.data import Dataset
 
-from utils.text import text_to_sequence, phoneme_to_sequence, pad_with_eos_bos
-from utils.data import prepare_data, prepare_tensor, prepare_stop_target
+from TTS.utils.text import text_to_sequence, phoneme_to_sequence, pad_with_eos_bos
+from TTS.utils.data import prepare_data, prepare_tensor, prepare_stop_target
 
 
 class MyDataset(Dataset):
@@ -166,16 +166,18 @@ class MyDataset(Dataset):
     def collate_fn(self, batch):
         r"""
             Perform preprocessing and create a final data batch:
-            1. PAD sequences with the longest sequence in the batch
+            1. Sort batch instances by text-length
             2. Convert Audio signal to Spectrograms.
-            3. PAD sequences that can be divided by r.
-            4. Convert Numpy to Torch tensors.
+            3. PAD sequences wrt r.
+            4. Load to Torch.
         """
 
         # Puts each data field into a tensor with outer dimension batch size
         if isinstance(batch[0], collections.Mapping):
 
             text_lenghts = np.array([len(d["text"]) for d in batch])
+
+            # sort items with text input length for RNN efficiency
             text_lenghts, ids_sorted_decreasing = torch.sort(
                 torch.LongTensor(text_lenghts), dim=0, descending=True)
 
@@ -187,31 +189,31 @@ class MyDataset(Dataset):
             speaker_name = [batch[idx]['speaker_name']
                             for idx in ids_sorted_decreasing]
 
+            # compute features
             mel = [self.ap.melspectrogram(w).astype('float32') for w in wav]
             linear = [self.ap.spectrogram(w).astype('float32') for w in wav]
 
-            mel_lengths = [m.shape[1] + 1 for m in mel]  # +1 for zero-frame
+            mel_lengths = [m.shape[1] for m in mel] 
 
             # compute 'stop token' targets
             stop_targets = [
-                np.array([0.] * (mel_len - 1)) for mel_len in mel_lengths
+                np.array([0.] * (mel_len - 1) + [1.]) for mel_len in mel_lengths
             ]
 
             # PAD stop targets
             stop_targets = prepare_stop_target(stop_targets,
                                                self.outputs_per_step)
 
-            # PAD sequences with largest length of the batch
+            # PAD sequences with longest instance in the batch
             text = prepare_data(text).astype(np.int32)
             wav = prepare_data(wav)
 
-            # PAD features with largest length + a zero frame
+            # PAD features with longest instance
             linear = prepare_tensor(linear, self.outputs_per_step)
             mel = prepare_tensor(mel, self.outputs_per_step)
             assert mel.shape[2] == linear.shape[2]
-            timesteps = mel.shape[2]
 
-            # B x T x D
+            # B x D x T --> B x T x D
             linear = linear.transpose(0, 2, 1)
             mel = mel.transpose(0, 2, 1)
 

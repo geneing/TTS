@@ -44,13 +44,17 @@
     "prenet_dropout": true,        // ONLY TACOTRON2 - enable/disable dropout at prenet. 
     "use_forward_attn": true,      // ONLY TACOTRON2 - if it uses forward attention. In general, it aligns faster.
     "forward_attn_mask": false, 
+    "attention_type": "original",
+    "attention_heads": 5,
+    "bidirectional_decoder": false,
     "transition_agent": false,     // ONLY TACOTRON2 - enable/disable transition agent of forward attention.
     "location_attn": false,        // ONLY TACOTRON2 - enable_disable location sensitive attention. It is enabled for TACOTRON by default.
     "loss_masking": true,         // enable / disable loss masking against the sequence padding.
     "enable_eos_bos_chars": false, // enable/disable beginning of sentence and end of sentence chars.
     "stopnet": true,               // Train stopnet predicting the end of synthesis. 
     "separate_stopnet": true,     // Train stopnet seperately if 'stopnet==true'. It prevents stopnet loss to influence the rest of the model. It causes a better model, but it trains SLOWER.
-    "tb_model_param_stats": false,     // true, plots param stats per layer on tensorboard. Might be memory consuming, but good for debugging. 
+    "tb_model_param_stats": false,     // true, plots param stats per layer on tensorboard. Might be memory consuming, but good for debugging.
+    "use_gst": false, 
     
     "batch_size": 32,       // Batch size for training. Lower values than 32 might cause hard to learn attention.
     "eval_batch_size":16,   

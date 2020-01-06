@@ -1,8 +1,8 @@
 # coding: utf-8
 import torch
 from torch import nn
-from layers.tacotron import Encoder, Decoder, PostCBHG
-from layers.gst_layers import GST
+from TTS.layers.tacotron import Encoder, Decoder, PostCBHG
+from TTS.layers.gst_layers import GST
 
 
 class GSTNet(nn.Module):

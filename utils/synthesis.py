@@ -30,7 +30,7 @@ def compute_style_mel(style_wav, ap, use_cuda):
 
 
 def run_model(model, inputs, CONFIG, truncated, speaker_id=None, style_mel=None, text_gst=False):
-    if CONFIG.model == "TacotronGST" and style_mel is not None:
+    if CONFIG.use_gst:
         decoder_output, postnet_output, alignments, stop_tokens = model.inference(
             inputs, style_mel=style_mel, speaker_ids=speaker_id, text_gst=text_gst)
     else:
