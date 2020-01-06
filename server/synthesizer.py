@@ -24,20 +24,19 @@ class Synthesizer(object):
     def __init__(self, config):
         self.wavernn = None
         self.config = config
-        self.use_cuda = self.config.use_cuda
+        self.use_cuda = config.use_cuda
         if self.use_cuda:
             assert torch.cuda.is_available(), "CUDA is not availabe on this machine."
-        self.load_tts(self.config.tts_checkpoint, self.config.tts_config,
-                      self.config.use_cuda)
+        self.load_tts(self.config.tts_path, self.config.tts_file, self.config.tts_config, config.use_cuda)
         if self.config.wavernn_lib_path:
-            self.load_wavernn(self.config.wavernn_lib_path, self.config.wavernn_path,
-                              self.config.wavernn_file, self.config.wavernn_config,
-                              self.config.use_cuda)
+            self.load_wavernn(config.wavernn_lib_path, config.wavernn_path, config.wavernn_file, config.wavernn_config, config.use_cuda)
 
-    def load_tts(self, tts_checkpoint, tts_config, use_cuda):
+    def load_tts(self, model_path, model_file, model_config, use_cuda):
+        tts_config = os.path.join(model_path, model_config)
+        self.model_file = os.path.join(model_path, model_file)
         print(" > Loading TTS model ...")
         print(" | > model config: ", tts_config)
-        print(" | > checkpoint file: ", tts_checkpoint)
+        print(" | > model file: ", model_file)
         self.tts_config = load_config(tts_config)
         self.use_phonemes = self.tts_config.use_phonemes
         self.ap = AudioProcessor(**self.tts_config.audio)
@@ -53,14 +52,14 @@ class Synthesizer(object):
             num_speakers = 0
         self.tts_model = setup_model(self.input_size, num_speakers=num_speakers, c=self.tts_config) 
         # load model state
-        cp = torch.load(tts_checkpoint, map_location=torch.device('cpu'))
+        cp = torch.load(self.model_file)
         # load the model
         self.tts_model.load_state_dict(cp['model'])
         if use_cuda:
             self.tts_model.cuda()
         self.tts_model.eval()
         self.tts_model.decoder.max_decoder_steps = 3000
-        if 'r' in cp:
+        if 'r' in cp and self.tts_config.model in ["Tacotron", "TacotronGST"]:
             self.tts_model.decoder.set_r(cp['r'])
 
     def load_wavernn(self, lib_path, model_path, model_file, model_config, use_cuda):

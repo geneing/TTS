@@ -32,12 +32,12 @@ def tts(model,
         model, text=text, CONFIG=C, use_cuda=use_cuda, ap=ap, speaker_id=False, style_wav=None,
         enable_eos_bos_chars=C.enable_eos_bos_chars, text_gst=text_gst)
     if use_vocoder_model:
-        vocoder_input = torch.FloatTensor(decoder_outputs.T).unsqueeze(0)
+        vocoder_input = torch.FloatTensor(postnet_output.T).unsqueeze(0)
         waveform = vocoder_model.generate(
             vocoder_input.cuda() if use_cuda else vocoder_input,
             batched=batched_vocoder,
-            target=8000,
-            overlap=400)
+            target=11000,
+            overlap=550)
     print(" >  Run-time: {}".format(time.time() - t_1))
     return alignment, postnet_output, stop_tokens, waveform
 
@@ -121,8 +121,6 @@ if __name__ == "__main__":
     model = setup_model(num_chars, num_speakers, C)
     cp = torch.load(args.model_path)
     model.load_state_dict(cp['model'])
-    model.r = cp['r']
-    model.decoder.r = cp['r']
     model.eval()
     if args.use_cuda:
         model.cuda()
@@ -138,17 +136,15 @@ if __name__ == "__main__":
                                      mode=VC.mode,
                                      mulaw=VC.mulaw,
                                      pad=VC.pad,
+                                     upsample_factors=VC.upsample_factors,
+                                     feat_dims=VC.audio["num_mels"],
+                                     compute_dims=128,
+                                     res_out_dims=128,
+                                     res_blocks=10,
+                                     hop_length=ap.hop_length,
+                                     sample_rate=ap.sample_rate,
                                      use_aux_net=VC.use_aux_net,
-            use_upsample_net=VC.use_upsample_net,
-            upsample_factors=VC.upsample_factors,
-            feat_dims=VC.audio["num_mels"],
-            compute_dims=128,
-            res_out_dims=128,
-            res_blocks=10,
-            hop_length=ap.hop_length,
-            sample_rate=ap.sample_rate,
-        use_aux_net=True,
-                                     use_upsample_net=True)
+                                     use_upsample_net=VC.use_upsample_net)
 
         check = torch.load(args.vocoder_path)
         vocoder_model.load_state_dict(check['model'])

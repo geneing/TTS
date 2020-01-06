@@ -92,9 +92,9 @@ setup(
     install_requires=[
         "scipy>=0.19.0",
         "torch>=0.4.1",
-        "numpy==1.15.4",
+        "numpy>=1.15.4",
         "librosa==0.6.2",
-        "unidecode==0.4.20",
+        "unidecode>=0.4.20",
         "attrdict",
         "tensorboardX",
         "matplotlib",
@@ -102,8 +102,9 @@ setup(
         "flask",
         # "lws",
         "tqdm",
-        "bokeh==1.4.0",
+        "bokeh>=1.4.0",
         "soundfile",
+        'g2p_en',
         "phonemizer @ https://github.com/bootphon/phonemizer/tarball/master",
     ],
     dependency_links=[
