@@ -315,7 +315,7 @@ def setup_model(num_chars, num_speakers, c):
             r=c.r,
             postnet_output_dim=c.audio['num_freq'],
             decoder_output_dim=c.audio['num_mels'],
-            gst=c.use_gst,
+            gst=(c.use_gst or c.text_gst),
             memory_size=c.memory_size,
             attn_type=c.attention_type,
             attn_win=c.windowing,
