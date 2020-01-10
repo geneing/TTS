@@ -5,7 +5,8 @@ import torch as T
 
 from TTS.server.synthesizer import Synthesizer
 from TTS.tests import get_tests_input_path, get_tests_output_path
-from TTS.utils.text.symbols import phonemes, symbols
+from TTS.utils.text import phonemes
+from TTS.utils.text.symbols import symbols
 from TTS.utils.generic_utils import load_config, save_checkpoint, setup_model
 
 

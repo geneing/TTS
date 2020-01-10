@@ -140,7 +140,7 @@ def _symbols_to_sequence(syms):
 
 
 def _phoneme_to_sequence(phons):
-    return [_PHONEMES_TO_ID[s] for s in list(phons) if _should_keep_phoneme(s)]
+    return [_PHONEMES_TO_ID[s] for s in [phons] if _should_keep_phoneme(s)]
 
 
 def _arpabet_to_sequence(text):

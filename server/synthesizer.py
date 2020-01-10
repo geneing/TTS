@@ -7,7 +7,8 @@ import sys
 
 from TTS.utils.audio import AudioProcessor
 from TTS.utils.generic_utils import load_config, setup_model
-from TTS.utils.text import phonemes, symbols
+from TTS.utils.text import phonemes
+from TTS.utils.text import symbols
 from TTS.utils.speakers import load_speaker_mapping
 from TTS.utils.synthesis import *
 
