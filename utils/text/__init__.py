@@ -3,16 +3,21 @@
 import re
 import phonemizer
 from phonemizer.phonemize import phonemize
+
+from g2p_en import G2p
+
 from TTS.utils.text import cleaners
-from TTS.utils.text.symbols import symbols, phonemes, _phoneme_punctuations, _bos, \
+from TTS.utils.text.symbols import symbols, _phoneme_punctuations, _bos, \
     _eos
+
+g2p = G2p()
 
 # Mappings from symbol to numeric ID and vice versa:
 _SYMBOL_TO_ID = {s: i for i, s in enumerate(symbols)}
 _ID_TO_SYMBOL = {i: s for i, s in enumerate(symbols)}
 
-_PHONEMES_TO_ID = {s: i for i, s in enumerate(phonemes)}
-_ID_TO_PHONEMES = {i: s for i, s in enumerate(phonemes)}
+_PHONEMES_TO_ID = {s: i for i, s in enumerate(g2p.phonemes)}
+_ID_TO_PHONEMES = {i: s for i, s in enumerate(g2p.phonemes)}
 
 # Regular expression matching text enclosed in curly braces:
 _CURLY_RE = re.compile(r'(.*?)\{(.+?)\}(.*)')
@@ -25,10 +30,9 @@ def text2phone(text, language):
     '''
     Convert graphemes to phonemes.
     '''
-    seperator = phonemizer.separator.Separator(' |', '', '|')
     #try:
     punctuations = re.findall(PHONEME_PUNCTUATION_PATTERN, text)
-    ph = phonemize(text, separator=seperator, strip=False, njobs=1, backend='espeak', language=language)
+    ph = '|'.join(g2p(text))
     ph = ph[:-1].strip() # skip the last empty character
     # Replace \n with matching punctuations.
     if punctuations:
