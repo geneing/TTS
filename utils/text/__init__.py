@@ -12,12 +12,18 @@ from TTS.utils.text.symbols import symbols, _phoneme_punctuations, _bos, \
 
 g2p = G2p()
 
+_pad = '_'
+_eos = '~'
+_bos = '^'
+_punctuations = '!\'(),-.:;? '
+phonemes = [_pad, _eos, _bos] + (g2p.phonemes) + list(_punctuations)
+
 # Mappings from symbol to numeric ID and vice versa:
 _SYMBOL_TO_ID = {s: i for i, s in enumerate(symbols)}
 _ID_TO_SYMBOL = {i: s for i, s in enumerate(symbols)}
 
-_PHONEMES_TO_ID = {s: i for i, s in enumerate(g2p.phonemes)}
-_ID_TO_PHONEMES = {i: s for i, s in enumerate(g2p.phonemes)}
+_PHONEMES_TO_ID = {s: i for i, s in enumerate(phonemes)}
+_ID_TO_PHONEMES = {i: s for i, s in enumerate(phonemes)}
 
 # Regular expression matching text enclosed in curly braces:
 _CURLY_RE = re.compile(r'(.*?)\{(.+?)\}(.*)')
