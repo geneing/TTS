@@ -7,7 +7,8 @@ import string
 
 from TTS.utils.synthesis import synthesis
 from TTS.utils.generic_utils import load_config, setup_model
-from TTS.utils.text.symbols import symbols, phonemes
+from TTS.utils.text import phonemes
+from TTS.utils.text.symbols import symbols
 from TTS.utils.audio import AudioProcessor
 
 
@@ -112,7 +113,7 @@ if __name__ == "__main__":
     # load the model
     num_chars = len(phonemes) if C.use_phonemes else len(symbols)
     model = setup_model(num_chars, num_speakers, C)
-    cp = torch.load(args.model_path)
+    cp = torch.load(args.model_path, map_location='cpu')
     model.load_state_dict(cp['model'])
     model.eval()
     if args.use_cuda:
