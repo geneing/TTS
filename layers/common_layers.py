@@ -120,7 +120,7 @@ class GravesAttention(nn.Module):
         self.J = None
         self.N_a = nn.Sequential(
             nn.Linear(query_dim, query_dim, bias=True),
-            nn.ReLU(),
+            nn.Tanh(),
             nn.Linear(query_dim, 3*K, bias=True))
         self.attention_weights = None
         self.mu_prev = None
