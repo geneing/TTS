@@ -26,8 +26,8 @@ def tts(model,
     t_1 = time.time()
     use_vocoder_model = vocoder_model is not None
     waveform, alignment, _, postnet_output, stop_tokens = synthesis(
-        model, text, C, use_cuda, ap, speaker_id, False,
-        C.enable_eos_bos_chars)
+        model, text, C, use_cuda, ap, speaker_id,
+        C.enable_eos_bos_chars, truncated=False)
     if C.model == "Tacotron" and use_vocoder_model:
         postnet_output = ap.out_linear_to_mel(postnet_output.T).T
     # correct if there is a scale difference b/w two models
@@ -115,10 +115,10 @@ if __name__ == "__main__":
     model = setup_model(num_chars, num_speakers, C)
     cp = torch.load(args.model_path, map_location='cpu')
     model.load_state_dict(cp['model'])
+    model.decoder.set_r(cp['r'])
     model.eval()
     if args.use_cuda:
         model.cuda()
-    model.decoder.set_r(cp['r'])
 
     # load vocoder model
     if args.vocoder_path != "":
