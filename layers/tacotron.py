@@ -164,8 +164,9 @@ class CBHG(nn.Module):
                           1,
                           batch_first=True,
                           bidirectional=True)
+        self._gru_memory = None
 
-    def forward(self, inputs):
+    def forward(self, inputs, persistent=False):
         # (B, in_features, T_in)
         x = inputs
         # (B, hid_features*K, T_in)
@@ -190,7 +191,12 @@ class CBHG(nn.Module):
         # (B, T_in, hid_features*2)
         # TODO: replace GRU with convolution as in Deep Voice 3
         self.gru.flatten_parameters()
-        outputs, _ = self.gru(x)
+
+        # keep hidden state between invocations. used for inference. note gru_memory must be initialized to None.
+        if persistent:
+            outputs, self._gru_memory = self.gru(x, self._gru_memory)
+        else:
+            outputs, _ = self.gru(x)
         return outputs
 
 
@@ -206,8 +212,8 @@ class EncoderCBHG(nn.Module):
             gru_features=128,
             num_highways=4)
 
-    def forward(self, x):
-        return self.cbhg(x)
+    def forward(self, x, persistent=False):
+        return self.cbhg(x, persistent=persistent)
 
 
 class Encoder(nn.Module):
@@ -218,7 +224,7 @@ class Encoder(nn.Module):
         self.prenet = Prenet(in_features, out_features=[256, 128])
         self.cbhg = EncoderCBHG()
 
-    def forward(self, inputs):
+    def forward(self, inputs, persistent=False):
         r"""
         Args:
             inputs (FloatTensor): embedding features
@@ -229,7 +235,7 @@ class Encoder(nn.Module):
         """
         # B x T x prenet_dim
         outputs = self.prenet(inputs)
-        outputs = self.cbhg(outputs.transpose(1, 2))
+        outputs = self.cbhg(outputs.transpose(1, 2), persistent=persistent)
         return outputs
 
 
@@ -245,8 +251,8 @@ class PostCBHG(nn.Module):
             gru_features=128,
             num_highways=4)
 
-    def forward(self, x):
-        return self.cbhg(x)
+    def forward(self, x, persistent=False):
+        return self.cbhg(x, persistent=persistent)
 
 
 class Decoder(nn.Module):
@@ -261,7 +267,7 @@ class Decoder(nn.Module):
     """
 
     # Pylint gets confused by PyTorch conventions here
-    #pylint: disable=attribute-defined-outside-init
+    # pylint: disable=attribute-defined-outside-init
 
     def __init__(self, in_features, memory_dim, r, memory_size, attn_type, attn_windowing,
                  attn_norm, prenet_type, prenet_dropout, forward_attn,
@@ -306,6 +312,9 @@ class Decoder(nn.Module):
         # decoder_RNN_input -> |RNN| -> RNN_state
         self.decoder_rnns = nn.ModuleList(
             [nn.GRUCell(256, 256) for _ in range(2)])
+
+        self.decoder_rnn_hiddens = None
+
         # RNN_state -> |Linear| -> mel_spec
         self.proj_to_mel = nn.Linear(256, memory_dim * self.r_init)
         # learn init values instead of zero init.
@@ -325,7 +334,7 @@ class Decoder(nn.Module):
         memory = memory.transpose(0, 1)
         return memory
 
-    def _init_states(self, inputs):
+    def _init_states(self, inputs, persistent=False):
         """
         Initialization of decoder states
         """
@@ -338,11 +347,12 @@ class Decoder(nn.Module):
             self.memory_input = torch.zeros(1, device=inputs.device).repeat(B, self.memory_dim)
         # decoder states
         self.attention_rnn_hidden = torch.zeros(1, device=inputs.device).repeat(B, 256)
-        self.decoder_rnn_hiddens = [
-            torch.zeros(1, device=inputs.device).repeat(B, 256)
-            for idx in range(len(self.decoder_rnns))
-        ]
-        self.context_vec = inputs.data.new(B, self.in_features).zero_()
+        if (not persistent) or (self.decoder_rnn_hiddens is None):
+            self.decoder_rnn_hiddens = [
+                torch.zeros(1, device=inputs.device).repeat(B, 256)
+                for idx in range(len(self.decoder_rnns))
+            ]
+            self.context_vec = inputs.data.new(B, self.in_features).zero_()
         # cache attention inputs
         self.processed_inputs = self.attention.preprocess_inputs(inputs)
 
@@ -356,7 +366,7 @@ class Decoder(nn.Module):
         outputs = outputs.transpose(1, 2)
         return outputs, attentions, stop_tokens
 
-    def decode(self, inputs, mask=None):
+    def decode(self, inputs, mask=None, persistent=False):
         # Prenet
         processed_memory = self.prenet(self.memory_input)
         # Attention RNN
@@ -395,7 +405,7 @@ class Decoder(nn.Module):
                 # memory queue size is larger than number of frames per decoder iter
                 self.memory_input = torch.cat([
                     new_memory, self.memory_input[:, :(
-                        self.memory_size - self.r) * self.memory_dim].clone()
+                                                              self.memory_size - self.r) * self.memory_dim].clone()
                 ], dim=-1)
             else:
                 # memory queue size smaller than number of frames per decoder iter
@@ -439,11 +449,12 @@ class Decoder(nn.Module):
             t += 1
         return self._parse_outputs(outputs, attentions, stop_tokens)
 
-    def inference(self, inputs, speaker_embeddings=None):
+    def inference(self, inputs, speaker_embeddings=None, persistent=False):
         """
         Args:
             inputs: encoder outputs.
             speaker_embeddings: speaker vectors.
+            persistent: save state
 
         Shapes:
             - inputs: batch x time x encoder_out_dim
@@ -453,7 +464,7 @@ class Decoder(nn.Module):
         attentions = []
         stop_tokens = []
         t = 0
-        self._init_states(inputs)
+        self._init_states(inputs, persistent=persistent)
         self.attention.init_win_idx()
         self.attention.init_states(inputs)
         while True:

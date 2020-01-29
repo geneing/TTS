@@ -76,11 +76,14 @@ class Encoder(nn.Module):
         )
         return outputs
 
-    def inference(self, x):
+    def inference(self, x, persistent=False):
         x = self.convolutions(x)
         x = x.transpose(1, 2)
         self.lstm.flatten_parameters()
-        outputs, _ = self.lstm(x)
+        if persistent:
+            outputs, self.rnn_state = self.lstm(x, self.rnn_state)
+        else:
+            outputs, _ = self.lstm(x)
         return outputs
 
     def inference_truncated(self, x):

@@ -29,7 +29,7 @@ def compute_style_mel(style_wav, ap, use_cuda):
     return style_mel
 
 
-def run_model(model, inputs, CONFIG, truncated, speaker_id=None, style_mel=None):
+def run_model(model, inputs, CONFIG, truncated, speaker_id=None, style_mel=None, persistent=False):
     if CONFIG.use_gst:
         decoder_output, postnet_output, alignments, stop_tokens = model.inference(
             inputs, style_mel=style_mel, speaker_ids=speaker_id)
@@ -39,7 +39,7 @@ def run_model(model, inputs, CONFIG, truncated, speaker_id=None, style_mel=None)
                 inputs, speaker_ids=speaker_id)
         else:
             decoder_output, postnet_output, alignments, stop_tokens = model.inference(
-                inputs, speaker_ids=speaker_id)
+                inputs, speaker_ids=speaker_id, persistent=persistent)
     return decoder_output, postnet_output, alignments, stop_tokens
 
 
@@ -78,7 +78,7 @@ def synthesis(model,
               style_wav=None,
               truncated=False,
               enable_eos_bos_chars=False, #pylint: disable=unused-argument
-              do_trim_silence=False):
+              do_trim_silence=False, persistent=False):
     """Synthesize voice for the given text.
 
         Args:
@@ -94,6 +94,7 @@ def synthesis(model,
                 for continuous inference at long texts.
             enable_eos_bos_chars (bool): enable special chars for end of sentence and start of sentence.
             do_trim_silence (bool): trim silence after synthesis.
+            persistent (bool): preserve state between invocations for smoother prosody for long texts
     """
     # GST processing
     style_mel = None
@@ -106,7 +107,7 @@ def synthesis(model,
         speaker_id = speaker_id.cuda()
     # synthesize voice
     decoder_output, postnet_output, alignments, stop_tokens = run_model(
-        model, inputs, CONFIG, truncated, speaker_id, style_mel)
+        model, inputs, CONFIG, truncated, speaker_id, style_mel, persistent=persistent)
     # convert outputs to numpy
     postnet_output, decoder_output, alignment = parse_outputs(
         postnet_output, decoder_output, alignments)

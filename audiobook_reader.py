@@ -13,7 +13,8 @@ from utils.audio import AudioProcessor
 
 from WaveRNN.models.wavernn import Model as VocoderModel
 
-from nltk.tokenize import sent_tokenize
+#from nltk.tokenize import sent_tokenize
+from spacy.lang.en import English
 
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = False
@@ -34,7 +35,7 @@ def tts(model,
     #     enable_eos_bos_chars=C.enable_eos_bos_chars, truncated=False, do_trim_silence=False)
     waveform, alignment, decoder_outputs, postnet_output, stop_tokens = synthesis(
         model, text, C, use_cuda, ap, None,
-        C.enable_eos_bos_chars, truncated=False)
+        C.enable_eos_bos_chars, truncated=False, persistent=persistent)
     mels = torch.FloatTensor(decoder_outputs.T)
     return alignment, postnet_output, stop_tokens, waveform, mels
 
@@ -185,15 +186,22 @@ if __name__ == "__main__":
     if use_cuda:
         vocoder_model = vocoder_model.cuda()
     #vocoder_model = None
+
+    nlp = English()
+    sentencizer = nlp.create_pipe("sentencizer")
+    nlp.add_pipe(sentencizer)
+
     with open(args.input, 'r') as f:
         txt = f.read()
+        doc = nlp(txt)
+
         mels=[]
-        for i, sent in enumerate(sent_tokenize(txt)):
-            print('\n',sent,'\n')
+        for i, sent in enumerate(doc.sents):
+            print('\n',sent.text,'\n')
             _, _, _, wav, mel = tts(
                 model,
                 C,
-                sent,
+                sent.text,
                 ap,
                 use_cuda,
                 persistent=True, text_gst=True)
