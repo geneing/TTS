@@ -82,6 +82,11 @@ class Prenet(nn.Module):
         return x
 
 
+####################
+# ATTENTION MODULES
+####################
+
+
 class LocationLayer(nn.Module):
     def __init__(self,
                  attention_dim,
@@ -106,14 +111,15 @@ class LocationLayer(nn.Module):
 
 
 class GravesAttention(nn.Module):
-    """ Graves attention as described here:
+    """ Discretized Graves attention:
         - https://arxiv.org/abs/1910.10288
+        - https://arxiv.org/pdf/1906.01083.pdf
     """
     COEF = 0.3989422917366028  # numpy.sqrt(1/(2*numpy.pi))
 
     def __init__(self, query_dim, K):
         super(GravesAttention, self).__init__()
-        self._mask_value = 0.0
+        self._mask_value = 1e-8
         self.K = K
         # self.attention_alignment = 0.05
         self.eps = 1e-5
@@ -127,15 +133,15 @@ class GravesAttention(nn.Module):
         self.init_layers()
 
     def init_layers(self):
-        torch.nn.init.constant_(self.N_a[2].bias[(2*self.K):(3*self.K)], 1.)
-        torch.nn.init.constant_(self.N_a[2].bias[self.K:(2*self.K)], 10)
+        torch.nn.init.constant_(self.N_a[2].bias[(2*self.K):(3*self.K)], 1.)  # bias mean
+        torch.nn.init.constant_(self.N_a[2].bias[self.K:(2*self.K)], 10)  # bias std
 
     def init_win_idx(self):
         pass
-    
+
     def init_states(self, inputs):
-        if self.J is None or inputs.shape[1] > self.J.shape[-1] or inputs.shape[0] != self.J.shape[0] :
-            self.J = torch.arange(0, inputs.shape[1], dtype=torch.float32).to(inputs.device).expand([inputs.shape[0], self.K, inputs.shape[1]])
+        if self.J is None or inputs.shape[1]+1 > self.J.shape[-1]:
+            self.J = torch.arange(0, inputs.shape[1]+2).to(inputs.device) + 0.5
         self.attention_weights = torch.zeros(inputs.shape[0], inputs.shape[1]).to(inputs.device)
         self.mu_prev = torch.zeros(inputs.shape[0], self.K).to(inputs.device)
 
@@ -162,23 +168,20 @@ class GravesAttention(nn.Module):
         k_t = gbk_t[:, 2, :]
 
         # attention GMM parameters
-        sig_t = torch.nn.functional.softplus(b_t)+self.eps
+        sig_t = torch.nn.functional.softplus(b_t) + self.eps
 
-        #inv_sig_t = torch.exp(-torch.clamp(b_t, min=-6, max=9))  # variance
         mu_t = self.mu_prev + torch.nn.functional.softplus(k_t)
-        g_t = torch.softmax(g_t, dim=-1) / sig_t + self.eps
+        g_t = torch.softmax(g_t, dim=-1) + self.eps
 
-        # each B x K x T_in
-        g_t = g_t.unsqueeze(2).expand(g_t.size(0),
-                                      g_t.size(1),
-                                      inputs.size(1))
-        sig_t = sig_t.unsqueeze(2).expand_as(g_t)
-        mu_t_ = mu_t.unsqueeze(2).expand_as(g_t)
-        j = self.J[:g_t.size(0), :, :inputs.size(1)]
+        j = self.J[:inputs.size(1)+1]
 
         # attention weights
-        phi_t = g_t * torch.exp(-0.5 * (mu_t_ - j)**2 / (sig_t**2))
-        alpha_t = self.COEF * torch.sum(phi_t, 1)
+        phi_t = g_t.unsqueeze(-1) * (1 / (1 + torch.sigmoid((mu_t.unsqueeze(-1) - j) / sig_t.unsqueeze(-1))))
+
+        # discritize attention weights
+        alpha_t = torch.sum(phi_t, 1)
+        alpha_t = alpha_t[:, 1:] - alpha_t[:, :-1]
+        alpha_t[alpha_t == 0] = 1e-8
 
         # apply masking
         if mask is not None:

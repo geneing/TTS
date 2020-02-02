@@ -152,7 +152,7 @@ def train(model, criterion, criterion_st, optimizer, optimizer_st, scheduler,
         global_step += 1
 
         # setup lr
-        if c.lr_decay:
+        if c.noam_schedule:
             scheduler.step()
         optimizer.zero_grad()
         if optimizer_st:
@@ -456,7 +456,8 @@ def evaluate(model, criterion, criterion_st, ap, global_step, epoch):
                 epoch_stats = {
                     "loss_postnet": keep_avg['avg_postnet_loss'],
                     "loss_decoder": keep_avg['avg_decoder_loss'],
-                    "stop_loss": keep_avg['avg_stop_loss']
+                    "stop_loss": keep_avg['avg_stop_loss'],
+                    "alignment_score": keep_avg['avg_align_score']
                 }
 
                 if c.bidirectional_decoder:
@@ -561,8 +562,8 @@ def main(args):  # pylint: disable=redefined-outer-name
         optimizer_st = None
 
     if c.loss_masking:
-        criterion = L1LossMasked() if c.model in ["Tacotron", "TacotronGST"
-                                                  ] else MSELossMasked()
+        criterion = L1LossMasked(c.seq_len_norm) if c.model in ["Tacotron", "TacotronGST"
+                                                  ] else MSELossMasked(c.seq_len_norm)
     else:
         criterion = nn.L1Loss() if c.model in ["Tacotron", "TacotronGST"
                                                ] else nn.MSELoss()
@@ -602,7 +603,7 @@ def main(args):  # pylint: disable=redefined-outer-name
     if num_gpus > 1:
         model = apply_gradient_allreduce(model)
 
-    if c.lr_decay:
+    if c.noam_schedule:
         scheduler = NoamLR(optimizer,
                            warmup_steps=c.warmup_steps,
                            last_epoch=args.restore_step - 1)
