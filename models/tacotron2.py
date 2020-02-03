@@ -82,7 +82,9 @@ class Tacotron2(nn.Module):
             return decoder_outputs, postnet_outputs, alignments, stop_tokens, decoder_outputs_backward, alignments_backward
         return decoder_outputs, postnet_outputs, alignments, stop_tokens
 
-    def inference(self, text, speaker_ids=None):
+    def inference(self, text, speaker_ids=None, persistent=False):
+        if persistent:
+            return self.inference_truncated(text, speaker_ids)
         embedded_inputs = self.embedding(text).transpose(1, 2)
         encoder_outputs = self.encoder.inference(embedded_inputs)
         encoder_outputs = self._add_speaker_embedding(encoder_outputs,

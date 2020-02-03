@@ -587,6 +587,7 @@ def main(args):  # pylint: disable=redefined-outer-name
             del model_dict
         for group in optimizer.param_groups:
             group['lr'] = c.lr
+            group['initial_lr'] = c.lr
         print(" > Model restored from step %d" % checkpoint['step'],
               flush=True)
         args.restore_step = checkpoint['step']

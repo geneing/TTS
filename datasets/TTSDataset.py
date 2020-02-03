@@ -115,7 +115,7 @@ class MyDataset(Dataset):
             text = np.asarray(
                 text_to_sequence(text, [self.cleaners]), dtype=np.int32)
 
-        assert text.size > 0, self.items[idx][1]
+        assert text.size > 0, (self.items[idx][1], self.items[idx][0])
         assert wav.size > 0, self.items[idx][1]
 
         sample = {
