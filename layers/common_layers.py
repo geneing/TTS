@@ -129,7 +129,10 @@ class GravesAttention(nn.Module):
         self.attention_weights = None
         self.mu_prev = None
         self.init_layers()
-    
+
+    def init_win_idx(self):
+        pass
+
     def init_layers(self):
         torch.nn.init.constant_(self.N_a[2].bias[(2*self.K):(3*self.K)], 1.)  # bias mean
         torch.nn.init.constant_(self.N_a[2].bias[self.K:(2*self.K)], 10)  # bias std

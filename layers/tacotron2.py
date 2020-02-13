@@ -312,7 +312,7 @@ class Decoder(nn.Module):
         Preserve decoder states for continuous inference
         """
         if self.memory_truncated is None:
-            self.memory_truncated = self.get_go_frame(inputs)
+            self.memory_truncated = self._update_memory(self.get_go_frame(inputs))
             self._init_states(inputs, mask=None, keep_states=False)
         else:
             self._init_states(inputs, mask=None, keep_states=True)
@@ -335,7 +335,7 @@ class Decoder(nn.Module):
                 print("   | > Decoder stopped with 'max_decoder_steps")
                 break
 
-            self.memory_truncated = decoder_output
+            self.memory_truncated = self._update_memory(decoder_output)
             t += 1
 
         outputs, stop_tokens, alignments = self._parse_outputs(
