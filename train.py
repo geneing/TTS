@@ -30,6 +30,7 @@ from TTS.utils.text.symbols import symbols
 from TTS.utils.visual import plot_alignment, plot_spectrogram
 from TTS.datasets.preprocess import load_meta_data
 from TTS.utils.radam import RAdam
+from ranger.ranger import Ranger
 from TTS.utils.measures import alignment_diagonal_score
 
 torch.backends.cudnn.enabled = True
@@ -553,11 +554,15 @@ def main(args):  # pylint: disable=redefined-outer-name
     print(" | > Num output units : {}".format(ap.num_freq), flush=True)
 
     params = set_weight_decay(model, c.wd)
-    optimizer = RAdam(params, lr=c.lr, weight_decay=0)
+    #optimizer = RAdam(params, lr=c.lr, weight_decay=c.wd)
+    optimizer = Ranger(params, lr=c.lr, weight_decay=c.wd)
     if c.stopnet and c.separate_stopnet:
-        optimizer_st = RAdam(model.decoder.stopnet.parameters(),
+        # optimizer_st = RAdam(model.decoder.stopnet.parameters(),
+        #                      lr=c.lr,
+        #                      weight_decay=c.wd)
+        optimizer_st = Ranger(model.decoder.stopnet.parameters(),
                              lr=c.lr,
-                             weight_decay=0)
+                             weight_decay=c.wd)
     else:
         optimizer_st = None
 
