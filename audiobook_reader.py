@@ -71,11 +71,13 @@ if __name__ == "__main__":
     paragraphs = cleared_txt.split('\n\n')
 
     for i, p in enumerate(paragraphs):
-        input_text = p.replace('\n', ' ')
-        wav = synthesizer.tts(input_text)
-        with open('%s/%d.wav'%(args.output, i+1), 'wb') as fout:
-            fout.write(wav.read())
-
+        try:
+            input_text = p.replace('\n', ' ')
+            wav = synthesizer.tts(input_text)
+            with open('%s/%d.wav'%(args.output, i+1), 'wb') as fout:
+                fout.write(wav.read())
+        except Exception as e:
+            print("{} \t Failed: {}\n\n".format(e, input_text))
 
 
 
