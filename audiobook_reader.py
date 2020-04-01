@@ -33,7 +33,7 @@ if __name__ == "__main__":
     parser.add_argument('--tts_checkpoint', type=str, help='path to TTS checkpoint file')
     parser.add_argument('--tts_config', type=str, help='path to TTS config.json file')
     parser.add_argument('--tts_speakers', type=str, help='path to JSON file containing speaker ids, if speaker ids are used in the model')
-    parser.add_argument('--wavernn_lib_path', type=str, default=None, help='path to WaveRNN project folder to be imported. If this is not passed, model uses Griffin-Lim for synthesis.')
+    parser.add_argument('--wavernn_lib_path', type=str, default="WaveRNN", help='path to WaveRNN project folder to be imported. If this is not passed, model uses Griffin-Lim for synthesis.')
     parser.add_argument('--wavernn_file', type=str, default=None, help='path to WaveRNN checkpoint file.')
     parser.add_argument('--wavernn_config', type=str, default=None, help='path to WaveRNN config file.')
     parser.add_argument('--use_cuda', type=convert_boolean, default=True, help='true to use CUDA.')
@@ -74,7 +74,7 @@ if __name__ == "__main__":
         try:
             input_text = p.replace('\n', ' ')
             wav = synthesizer.tts(input_text)
-            with open('%s/%d.wav'%(args.output, i+1), 'wb') as fout:
+            with open('%s/%.4d.wav'%(args.output, i+1), 'wb') as fout:
                 fout.write(wav.read())
         except Exception as e:
             print("{} \t Failed: {}\n\n".format(e, input_text))
