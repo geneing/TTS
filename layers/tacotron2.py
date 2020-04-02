@@ -110,7 +110,7 @@ class Decoder(nn.Module):
         self.query_dim = 1024
         self.decoder_rnn_dim = 1024
         self.prenet_dim = 256
-        self.max_decoder_steps = 1000
+        self.max_decoder_steps = 5000
         self.gate_threshold = 0.5
         self.p_attention_dropout = 0.1
         self.p_decoder_dropout = 0.1
