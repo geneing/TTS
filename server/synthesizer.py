@@ -187,7 +187,7 @@ class Synthesizer(object):
                 vocoder_input = torch.FloatTensor(postnet_output.T).unsqueeze(0)
                 if self.use_cuda:
                     vocoder_input = vocoder_input.cuda()
-                wav = self.wavernn.generate(torch.clamp((vocoder_input+4.)/8.,0,1), batched=self.config.is_wavernn_batched, target=11000, overlap=550)
+                wav = self.wavernn.generate(torch.clamp((vocoder_input+4.)/8.,0,1), batched=self.config.is_wavernn_batched, target=5500, overlap=550)
             else:
                 wav = inv_spectrogram(postnet_output, self.ap, self.tts_config)
             # trim silence
