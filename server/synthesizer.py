@@ -15,6 +15,9 @@ from TTS.utils.synthesis import *
 
 from TTS.utils.text import make_symbols, phonemes, symbols
 
+import scipy as sp
+
+
 alphabets = r"([A-Za-z])"
 prefixes = r"(Mr|St|Mrs|Ms|Dr)[.]"
 suffixes = r"(Inc|Ltd|Jr|Sr|Co)"
@@ -39,6 +42,9 @@ class Synthesizer(object):
         if self.config.pwgan_lib_path:
             self.load_pwgan(self.config.pwgan_lib_path, self.config.pwgan_file,
                             self.config.pwgan_config, self.config.use_cuda)
+
+        self.sos = sp.signal.butter(10, .9*self.tts_config.audio['mel_fmax'], btype='low', fs=self.tts_config.audio['sample_rate'], output='sos')
+        self.sos1 = sp.signal.butter(10, 150, btype='high', fs=self.tts_config.audio['sample_rate'], output='sos')
 
     def load_tts(self, tts_checkpoint, tts_config, use_cuda):
         # pylint: disable=global-statement
@@ -180,10 +186,11 @@ class Synthesizer(object):
                 vocoder_input = vocoder_input.cuda()
             wav = self.pwgan.inference(vocoder_input, hop_size=self.ap.hop_length)
         elif self.wavernn:
+            min, max = (-4., 4.) #(postnet_output.min(), postnet_output.max())
             vocoder_input = torch.FloatTensor(postnet_output.T).unsqueeze(0)
             if self.use_cuda:
                 vocoder_input = vocoder_input.cuda()
-            wav = self.wavernn.generate(torch.clamp((vocoder_input+4.)/8., 0, 1), batched=self.config.is_wavernn_batched, target=5500, overlap=550)
+            wav = self.wavernn.generate(torch.clamp((vocoder_input-min)/(max-min), 0, 1), batched=self.config.is_wavernn_batched, target=5500, overlap=550)
         else:
             wav = inv_spectrogram(postnet_output, self.ap, self.tts_config)
 
@@ -206,6 +213,7 @@ class Synthesizer(object):
             postnet_output, _, _ = self.parse_outputs(
                 postnet_output, decoder_output, alignments)
 
+            postnet_output = np.append(postnet_output, -4*np.ones([20, postnet_output.shape[1]], dtype=postnet_output.dtype), axis=0)
             postnet_outputs.append(postnet_output)
             nframes += postnet_output.shape[0]
             print("\t {} ".format(nframes))
@@ -218,6 +226,9 @@ class Synthesizer(object):
             wavs.append(self.vocode(postnet_outputs))
 
         out = io.BytesIO()
-        self.save_wav(np.hstack(wavs), out)
+        #filter output to cleanup some synthesis artefacts
+        w = sp.signal.sosfilt(self.sos, np.hstack(wavs))
+        w = sp.signal.sosfilt(self.sos1, w)
+        self.save_wav(w, out)
 
         return out
