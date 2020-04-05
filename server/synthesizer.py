@@ -129,7 +129,7 @@ class Synthesizer(object):
 
     def save_wav(self, wav, path):
         # wav *= 32767 / max(1e-8, np.max(np.abs(wav)))
-        wav = np.array(wav)
+        #wav = np.array(wav)
         self.ap.save_wav(wav, path)
 
     @staticmethod
@@ -164,10 +164,38 @@ class Synthesizer(object):
         sentences = list(filter(None, [s.strip() for s in sentences])) # remove empty sentences
         return sentences
 
+    @staticmethod
+    def parse_outputs(postnet_output, decoder_output, alignments):
+        postnet_output = postnet_output[0].data.cpu().numpy()
+        decoder_output = decoder_output[0].data.cpu().numpy()
+        alignment = alignments[0].cpu().data.numpy()
+        return postnet_output, decoder_output, alignment
+
+    def vocode(self, postnet_outputs):
+        postnet_output = np.vstack(postnet_outputs)
+
+        if self.pwgan:
+            vocoder_input = torch.FloatTensor(postnet_output.T).unsqueeze(0)
+            if self.use_cuda:
+                vocoder_input = vocoder_input.cuda()
+            wav = self.pwgan.inference(vocoder_input, hop_size=self.ap.hop_length)
+        elif self.wavernn:
+            vocoder_input = torch.FloatTensor(postnet_output.T).unsqueeze(0)
+            if self.use_cuda:
+                vocoder_input = vocoder_input.cuda()
+            wav = self.wavernn.generate(torch.clamp((vocoder_input+4.)/8., 0, 1), batched=self.config.is_wavernn_batched, target=5500, overlap=550)
+        else:
+            wav = inv_spectrogram(postnet_output, self.ap, self.tts_config)
+
+        return wav
+
     def tts(self, text):
         wavs = []
         sens = self.split_into_sentences(text)
         print(sens)
+
+        postnet_outputs = []
+        nframes = 0
         for sen in sens:
             # preprocess the given text
             inputs = text_to_seqvec(sen, self.tts_config, self.use_cuda)
@@ -175,27 +203,21 @@ class Synthesizer(object):
             decoder_output, postnet_output, alignments, _ = run_model(
                 self.tts_model, inputs, self.tts_config, False, None, None)
             # convert outputs to numpy
-            postnet_output, decoder_output, _ = parse_outputs(
+            postnet_output, _, _ = self.parse_outputs(
                 postnet_output, decoder_output, alignments)
 
-            if self.pwgan:
-                vocoder_input = torch.FloatTensor(postnet_output.T).unsqueeze(0)
-                if self.use_cuda:
-                    vocoder_input = vocoder_input.cuda()
-                wav = self.pwgan.inference(vocoder_input, hop_size=self.ap.hop_length)
-            elif self.wavernn:
-                vocoder_input = torch.FloatTensor(postnet_output.T).unsqueeze(0)
-                if self.use_cuda:
-                    vocoder_input = vocoder_input.cuda()
-                wav = self.wavernn.generate(torch.clamp((vocoder_input+4.)/8.,0,1), batched=self.config.is_wavernn_batched, target=5500, overlap=550)
-            else:
-                wav = inv_spectrogram(postnet_output, self.ap, self.tts_config)
-            # trim silence
-            wav = trim_silence(wav, self.ap)
+            postnet_outputs.append(postnet_output)
+            nframes += postnet_output.shape[0]
+            print("\t {} ".format(nframes))
+            if nframes > 4000:  # to handle limited device memory
+                nframes = 0
+                wavs.append(self.vocode(postnet_outputs))
+                postnet_outputs = []
 
-            wavs += list(wav)
-            wavs += [0] * 10000
+        if len(postnet_outputs) > 0:
+            wavs.append(self.vocode(postnet_outputs))
 
         out = io.BytesIO()
-        self.save_wav(wavs, out)
+        self.save_wav(np.hstack(wavs), out)
+
         return out
