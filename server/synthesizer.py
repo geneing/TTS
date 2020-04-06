@@ -204,26 +204,32 @@ class Synthesizer(object):
         postnet_outputs = []
         nframes = 0
         for sen in sens:
-            # preprocess the given text
-            inputs = text_to_seqvec(sen, self.tts_config, self.use_cuda)
-            # synthesize voice
-            decoder_output, postnet_output, alignments, _ = run_model(
-                self.tts_model, inputs, self.tts_config, False, None, None)
-            # convert outputs to numpy
-            postnet_output, _, _ = self.parse_outputs(
-                postnet_output, decoder_output, alignments)
+            try:
+                # preprocess the given text
+                inputs = text_to_seqvec(sen, self.tts_config, self.use_cuda)
+                # synthesize voice
+                decoder_output, postnet_output, alignments, _ = run_model(
+                    self.tts_model, inputs, self.tts_config, False, None, None)
+                # convert outputs to numpy
+                postnet_output, _, _ = self.parse_outputs(
+                    postnet_output, decoder_output, alignments)
 
-            postnet_output = np.append(postnet_output, -4*np.ones([20, postnet_output.shape[1]], dtype=postnet_output.dtype), axis=0)
-            postnet_outputs.append(postnet_output)
-            nframes += postnet_output.shape[0]
-            print("\t {} ".format(nframes))
-            if nframes > 4000:  # to handle limited device memory
-                nframes = 0
+                postnet_output = np.append(postnet_output, -4*np.ones([20, postnet_output.shape[1]], dtype=postnet_output.dtype), axis=0)
+                postnet_outputs.append(postnet_output)
+                nframes += postnet_output.shape[0]
+                print("\t {} ".format(nframes))
+                if nframes > 3800:  # to handle limited device memory
+                    nframes = 0
+                    wavs.append(self.vocode(postnet_outputs))
+                    postnet_outputs = []
+            except Exception as e:
+                print("{} : {}".format(e, sen))
+
+        try:
+            if len(postnet_outputs) > 0:
                 wavs.append(self.vocode(postnet_outputs))
-                postnet_outputs = []
-
-        if len(postnet_outputs) > 0:
-            wavs.append(self.vocode(postnet_outputs))
+        except Exception as e:
+            print("{} : {}".format(e, sen))
 
         out = io.BytesIO()
         #filter output to cleanup some synthesis artefacts
